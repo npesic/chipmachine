@@ -22,6 +22,7 @@
 
 #include "../ta-utils.h"
 #include "../timeutils.h"
+#include <climits>   // UINT_MAX -- not pulled in transitively on glibc/libstdc++
 #include <thread>
 #include <mutex>
 #include <condition_variable>
