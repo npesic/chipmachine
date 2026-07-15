@@ -45,13 +45,17 @@ set_source_files_properties(GoatTrackerPlugin.cpp PROPERTIES
 
 set(GT_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/goattrackerplugin_combined.o)
 # On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
-# (unlike macOS's Mach-O `ld -r`), so the vendored reSID core here still clashes
-# with the same core in other plugins (e.g. dmfplugin/furnace) at final link.
-# objcopy --localize-hidden performs the localization on non-Apple platforms.
+# (unlike macOS's Mach-O `ld -r`), so this plugin's vendored reSID core still
+# clashes with the same core in other plugins (e.g. dmfplugin/furnace) at final
+# link. Localize it -- but only the *strong* hidden symbols: localizing weak
+# COMDAT entries (C++ template/inline/vtable) breaks COMDAT dedup ("defined in
+# discarded section"). See ../localize_strong_hidden.cmake.
 if(APPLE)
     set(_LOCALIZE_HIDDEN)
 else()
-    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${GT_COMBINED})
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_COMMAND}
+        -DOBJ=${GT_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
 add_custom_command(
     OUTPUT ${GT_COMBINED}

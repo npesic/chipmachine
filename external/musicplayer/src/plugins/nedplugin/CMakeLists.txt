@@ -57,12 +57,16 @@ set(NED_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/nedplugin_combined.o)
 # On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
 # (unlike macOS's Mach-O `ld -r`, which the comment above assumes), so the
 # vendored Nes_Snd_Emu core (Blip_Buffer, Nes_Apu, done, SampleName, ...) still
-# clashes with the same-named symbols in other plugins at final link. objcopy
-# --localize-hidden performs the localization on non-Apple platforms.
+# clashes with the same-named symbols in other plugins at final link. Localize
+# them -- but only the *strong* hidden symbols: localizing weak COMDAT entries
+# (C++ template/inline/vtable) breaks COMDAT dedup ("defined in discarded
+# section"). See ../localize_strong_hidden.cmake.
 if(APPLE)
     set(_LOCALIZE_HIDDEN)
 else()
-    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${NED_COMBINED})
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_COMMAND}
+        -DOBJ=${NED_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
 add_custom_command(
     OUTPUT ${NED_COMBINED}

@@ -142,13 +142,17 @@ target_link_libraries(libvgmplugin_objs PRIVATE coreutils)
 
 set(LIBVGM_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/libvgmplugin_combined.o)
 # On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
-# (unlike macOS's Mach-O `ld -r`), so the vendored cores here still clash with
-# the same cores in other plugins at final link. objcopy --localize-hidden
-# performs the localization on non-Apple platforms.
+# (unlike macOS's Mach-O `ld -r`), so this plugin's vendored cores still clash
+# with identically-named cores in other plugins at final link. Localize them --
+# but only the *strong* hidden symbols: localizing weak COMDAT entries (C++
+# template/inline/vtable) breaks COMDAT dedup ("defined in discarded section").
+# See ../localize_strong_hidden.cmake.
 if(APPLE)
     set(_LOCALIZE_HIDDEN)
 else()
-    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${LIBVGM_COMBINED})
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_COMMAND}
+        -DOBJ=${LIBVGM_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
 add_custom_command(
     OUTPUT ${LIBVGM_COMBINED}

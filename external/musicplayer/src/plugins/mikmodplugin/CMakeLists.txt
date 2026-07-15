@@ -61,11 +61,15 @@ set(MIKMOD_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/mikmodplugin_combined.o)
 # On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
 # (unlike macOS's Mach-O `ld -r`), so libmikmod's cores (getfrequency, ...)
 # still clash with the same-named symbols in other plugins at final link.
-# objcopy --localize-hidden performs the localization on non-Apple platforms.
+# Localize them -- but only the *strong* hidden symbols: localizing weak COMDAT
+# entries (C++ template/inline/vtable) breaks COMDAT dedup ("defined in
+# discarded section"). See ../localize_strong_hidden.cmake.
 if(APPLE)
     set(_LOCALIZE_HIDDEN)
 else()
-    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${MIKMOD_COMBINED})
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_COMMAND}
+        -DOBJ=${MIKMOD_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
 add_custom_command(
     OUTPUT ${MIKMOD_COMBINED}
