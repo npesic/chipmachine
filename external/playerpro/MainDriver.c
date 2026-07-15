@@ -47,9 +47,11 @@ static inline void ByteSwapPatHeader(PatHeader *toSwap);
 
 typedef enum InputType {
 	MADFileType = 1,
-#ifdef _MAC_H
+	// Always define this enumerator: one comparison against it (in MADReadMAD)
+	// is not _MAC_H-guarded, so it must exist on every platform. All the code
+	// that actually reads from a CFReadStream stays behind #ifdef _MAC_H, so on
+	// non-Apple builds this is simply an unused integer constant.
 	MADCFReadStreamType = 2,
-#endif
 	MADPtrType = 3
 } MADInputType;
 
