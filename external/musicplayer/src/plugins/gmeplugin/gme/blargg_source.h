@@ -8,6 +8,7 @@
 
 #include "blargg_common.h"
 #include <string.h>  /* memcpy, memset, memmove */
+#include <stdio.h>   /* declare POSIX dprintf() before shadowing it below */
 
 // dprintf: used in newer SGC gme files for debug output — no-op.
 // Defined here (after <string.h>/<stdio.h>) to avoid conflicting with POSIX dprintf(fd,...).
