@@ -32,6 +32,13 @@
 #ifndef _PTK_TYPES_H_
 #define _PTK_TYPES_H_
 
+// The fixed-width types (uint8_t/uint32_t/...) used throughout protrekkr must
+// always be available. They were only pulled in via <stdint.h> on a few
+// platforms (Haiku/Linux/AROS) below; on glibc/GCC without -D__LINUX__ they
+// aren't leaked transitively the way they are on macOS/clang, so include the
+// header unconditionally here.
+#include <stdint.h>
+
 // ------------------------------------------------------
 // Types
 #if defined(__WIN32__) && !defined(__GCC__)
