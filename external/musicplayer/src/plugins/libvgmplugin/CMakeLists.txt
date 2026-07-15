@@ -141,9 +141,19 @@ set_source_files_properties(LibVGMPlugin.cpp PROPERTIES
 target_link_libraries(libvgmplugin_objs PRIVATE coreutils)
 
 set(LIBVGM_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/libvgmplugin_combined.o)
+# On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
+# (unlike macOS's Mach-O `ld -r`), so the vendored cores here still clash with
+# the same cores in other plugins at final link. objcopy --localize-hidden
+# performs the localization on non-Apple platforms.
+if(APPLE)
+    set(_LOCALIZE_HIDDEN)
+else()
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${LIBVGM_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${LIBVGM_COMBINED}
     COMMAND ld -r $<TARGET_OBJECTS:libvgmplugin_objs> -o ${LIBVGM_COMBINED}
+    ${_LOCALIZE_HIDDEN}
     DEPENDS libvgmplugin_objs $<TARGET_OBJECTS:libvgmplugin_objs>
     COMMAND_EXPAND_LISTS
     VERBATIM

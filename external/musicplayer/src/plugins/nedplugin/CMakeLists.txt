@@ -54,9 +54,20 @@ set_source_files_properties(NEDPlugin.cpp PROPERTIES
 # Collapse the objects into one relocatable object with all symbols localized
 # except nedplugin_register (`ld -r` localizes private externs by default).
 set(NED_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/nedplugin_combined.o)
+# On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
+# (unlike macOS's Mach-O `ld -r`, which the comment above assumes), so the
+# vendored Nes_Snd_Emu core (Blip_Buffer, Nes_Apu, done, SampleName, ...) still
+# clashes with the same-named symbols in other plugins at final link. objcopy
+# --localize-hidden performs the localization on non-Apple platforms.
+if(APPLE)
+    set(_LOCALIZE_HIDDEN)
+else()
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${NED_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${NED_COMBINED}
     COMMAND ld -r $<TARGET_OBJECTS:nedplugin_objs> -o ${NED_COMBINED}
+    ${_LOCALIZE_HIDDEN}
     DEPENDS nedplugin_objs $<TARGET_OBJECTS:nedplugin_objs>
     COMMAND_EXPAND_LISTS
     VERBATIM

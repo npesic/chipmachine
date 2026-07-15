@@ -44,9 +44,19 @@ set_source_files_properties(GoatTrackerPlugin.cpp PROPERTIES
     COMPILE_OPTIONS "-fvisibility=default;-fvisibility-inlines-hidden")
 
 set(GT_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/goattrackerplugin_combined.o)
+# On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
+# (unlike macOS's Mach-O `ld -r`), so the vendored reSID core here still clashes
+# with the same core in other plugins (e.g. dmfplugin/furnace) at final link.
+# objcopy --localize-hidden performs the localization on non-Apple platforms.
+if(APPLE)
+    set(_LOCALIZE_HIDDEN)
+else()
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${GT_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${GT_COMBINED}
     COMMAND ld -r $<TARGET_OBJECTS:goattrackerplugin_objs> -o ${GT_COMBINED}
+    ${_LOCALIZE_HIDDEN}
     DEPENDS goattrackerplugin_objs $<TARGET_OBJECTS:goattrackerplugin_objs>
     COMMAND_EXPAND_LISTS
     VERBATIM

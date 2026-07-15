@@ -369,9 +369,19 @@ set_source_files_properties(DMFPlugin.cpp PROPERTIES
     COMPILE_OPTIONS "-std=c++17;-fvisibility=default;-fvisibility-inlines-hidden")
 
 set(DMF_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/dmfplugin_combined.o)
+# On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
+# (unlike macOS's Mach-O `ld -r`), so the vendored cores here (reSID, SAASound,
+# emu2413, ...) still clash with the same cores in other plugins at final link.
+# objcopy --localize-hidden performs the localization on non-Apple platforms.
+if(APPLE)
+    set(_LOCALIZE_HIDDEN)
+else()
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${DMF_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${DMF_COMBINED}
     COMMAND ld -r $<TARGET_OBJECTS:dmfplugin_objs> -o ${DMF_COMBINED}
+    ${_LOCALIZE_HIDDEN}
     DEPENDS dmfplugin_objs $<TARGET_OBJECTS:dmfplugin_objs>
     COMMAND_EXPAND_LISTS
     VERBATIM

@@ -92,9 +92,19 @@ set_source_files_properties(FamiTrackerPlugin.cpp PROPERTIES
     COMPILE_OPTIONS "-fvisibility=default;-fvisibility-inlines-hidden")
 
 set(FAMI_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/famitrackerplugin_combined.o)
+# On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
+# (unlike macOS's Mach-O `ld -r`), so the vendored cores here (Blip_Buffer,
+# emu2413, ...) still clash with the same cores in other plugins at final link.
+# objcopy --localize-hidden performs the localization on non-Apple platforms.
+if(APPLE)
+    set(_LOCALIZE_HIDDEN)
+else()
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${FAMI_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${FAMI_COMBINED}
     COMMAND ld -r $<TARGET_OBJECTS:famitrackerplugin_objs> -o ${FAMI_COMBINED}
+    ${_LOCALIZE_HIDDEN}
     DEPENDS famitrackerplugin_objs $<TARGET_OBJECTS:famitrackerplugin_objs>
     COMMAND_EXPAND_LISTS
     VERBATIM

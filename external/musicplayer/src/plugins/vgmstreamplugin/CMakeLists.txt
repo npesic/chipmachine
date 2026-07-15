@@ -46,9 +46,19 @@ set_source_files_properties(VGMStreamPlugin.cpp PROPERTIES
 target_link_libraries(vgmstreamplugin_objs PRIVATE coreutils)
 
 set(VGMSTREAM_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/vgmstreamplugin_combined.o)
+# On ELF/GNU ld, `ld -r` does NOT demote hidden-visibility symbols to local
+# (unlike macOS's Mach-O `ld -r`), so the vendored cores here still clash with
+# the same cores in other plugins at final link. objcopy --localize-hidden
+# performs the localization on non-Apple platforms.
+if(APPLE)
+    set(_LOCALIZE_HIDDEN)
+else()
+    set(_LOCALIZE_HIDDEN COMMAND ${CMAKE_OBJCOPY} --localize-hidden ${VGMSTREAM_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${VGMSTREAM_COMBINED}
     COMMAND ld -r $<TARGET_OBJECTS:vgmstreamplugin_objs> -o ${VGMSTREAM_COMBINED}
+    ${_LOCALIZE_HIDDEN}
     DEPENDS vgmstreamplugin_objs $<TARGET_OBJECTS:vgmstreamplugin_objs>
     COMMAND_EXPAND_LISTS
     VERBATIM
