@@ -12,7 +12,20 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+// These system headers MUST be included at global scope. They used to be
+// #included inside `namespace utils` (in the POSIX ExecPipe impl below), which
+// declares libc symbols such as ::signal / ::sig_atomic_t / ::__sighandler_t as
+// utils::signal etc. A later <csignal> then fails ("using ::signal;" finds
+// nothing). This only bit on glibc -- on macOS these headers are already pulled
+// in globally before this namespace opens, so the in-namespace re-include was a
+// guarded no-op there.
 #include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <cerrno>
+#include <cstdio>
 #endif
 
 namespace utils {
@@ -71,13 +84,9 @@ inline void ExecPipe::setReadNonBlocking() {}
 inline void ExecPipe::closeWrite() {}
 #else
 
-#    include <fcntl.h>
-#    include <signal.h>
-#    include <sys/types.h>
-#    include <sys/wait.h>
-#    include <unistd.h>
-#    include <cerrno>
-#    include <cstdio>
+// NOTE: the POSIX/C system headers this code needs are included at global scope
+// near the top of this file, NOT here -- including them inside `namespace utils`
+// pollutes utils:: with libc symbols and breaks a later <csignal>.
 
 __attribute__((noinline)) inline pid_t popen2_simple(const char* command, int* infp, int* outfp)
 {
