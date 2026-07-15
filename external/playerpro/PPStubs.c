@@ -9,6 +9,13 @@
 // Public domain, like the rest of PlayerPRO.
 
 #include "RDriver.h"
+
+// These stubs stand in for Apple-only entry points, and every caller of them in
+// playerpro is itself behind #ifdef _MAC_H (defined by MADDefs.h on __APPLE__,
+// pulled in via RDriver.h above). On non-Apple platforms nothing references
+// them, and CoreFoundation does not exist, so compile the whole body only for
+// the Mac build; elsewhere this is an (inert) empty translation unit.
+#ifdef _MAC_H
 #include <CoreFoundation/CoreFoundation.h>
 
 MADErr initCoreAudio(MADDriverRec* inMADDriver)
@@ -29,3 +36,5 @@ void SetOSType(CFURLRef theURL, OSType theType)
     (void)theURL;
     (void)theType;
 }
+
+#endif // _MAC_H
