@@ -158,6 +158,29 @@ if(SAN)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=${SAN}")
 endif()
 
+# ---------------------------------------------------------------------------
+# Static-library link ordering (GNU ld / Linux, incl. Raspberry Pi).
+#
+# The executables link a large web of mutually-dependent static archives:
+# plugin_register calls into every *plugin, the plugins call back into shared
+# modules, and the vendored zxtune tree is split into ~40 sub-libraries with
+# circular references (Binary::*, Analysis::*, Devices::*, Module::* ...).
+#
+# GNU ld resolves archives in a single left-to-right pass, pulling only the
+# members needed for symbols that are undefined *at the moment* it sees each
+# archive, so these cycles produce "undefined reference" errors regardless of
+# the order CMake emits the libraries in. (Apple's ld64 rescans automatically,
+# which is why the macOS build links without this.)
+#
+# Wrap the whole library list in --start-group/--end-group so ld rescans the
+# group until no new symbols resolve. Done by overriding the executable link
+# rule (rather than per-target link flags) so it also brackets libraries pulled
+# in transitively, e.g. the zxtune sub-libs behind zxtuneplugin. Non-Apple only.
+if(NOT APPLE AND NOT WIN32)
+    set(CMAKE_CXX_LINK_EXECUTABLE
+        "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> -Wl,--start-group <LINK_LIBRARIES> -Wl,--end-group")
+endif()
+
 add_library(musicplayer INTERFACE)
 add_library(plugin_register STATIC src/plugin_register.cpp)
 target_link_libraries(musicplayer INTERFACE psf plugin_register)
