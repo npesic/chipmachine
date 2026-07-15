@@ -71,6 +71,10 @@ add_subdirectory("${ZXTUNE_ROOT}/src/core/plugins/archives" "${_zxt_bin}/core_pl
 add_subdirectory("${ZXTUNE_ROOT}/src/core/plugins/players" "${_zxt_bin}/core_plugins_players")
 add_subdirectory("${ZXTUNE_ROOT}/src/debug"                "${_zxt_bin}/dbg")
 add_subdirectory("${ZXTUNE_ROOT}/src/devices/aym"          "${_zxt_bin}/devices_aym")
+# The AYM register-dump exporters (CreatePSGDumper/ZX50/FYM/RawStream/Debug)
+# live in a sibling dumper/ dir with its own library; devices_aym's CMakeLists
+# only globs its own src/. module_conversion references them, so build+link it.
+add_subdirectory("${ZXTUNE_ROOT}/src/devices/aym/dumper"   "${_zxt_bin}/devices_aym_dumper")
 add_subdirectory("${ZXTUNE_ROOT}/src/devices/beeper"       "${_zxt_bin}/devices_beeper")
 add_subdirectory("${ZXTUNE_ROOT}/src/devices/dac"          "${_zxt_bin}/devices_dac")
 add_subdirectory("${ZXTUNE_ROOT}/src/devices/fm"           "${_zxt_bin}/devices_fm")
@@ -93,7 +97,7 @@ set(ZXTUNE_LIBS
     lhasa lzma z80ex
     analysis binary binary_format binary_compression
     core core_plugins_archives core_plugins_players
-    dbg devices_aym devices_beeper devices_dac devices_fm devices_saa devices_z80
+    dbg devices_aym devices_aym_dumper devices_beeper devices_dac devices_fm devices_saa devices_z80
     formats_chiptune formats_packed formats_multitrack formats_archived
     l10n_stub module_conversion module_players module_properties
     parameters platform_version sound strings tools)
