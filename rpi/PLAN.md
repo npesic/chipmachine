@@ -1,0 +1,368 @@
+# ChipMachine → Raspberry Pi 5: Porting Plan
+
+Goal (from `PROMPT.md`): add the build changes needed to compile the **same**
+ChipMachine source into a working executable for the **Raspberry Pi 5**, and
+document the tooling/dependency deltas vs. the current Apple Silicon / macOS
+build. Deliverable = this detailed plan.
+
+---
+
+## 1. Executive summary
+
+The single most important framing: **a Raspberry Pi 5 is an `aarch64` (ARMv8.2-A,
+Cortex-A76) machine running 64-bit Raspberry Pi OS — i.e. a standard 64-bit
+Debian/Linux desktop.** So this is *not* an exotic embedded port; it is a
+**Linux/aarch64 desktop build**, and the codebase already contains a large amount
+of working Linux support:
+
+- Audio already has an ALSA backend (`player_linux.cpp`, selected by the
+  `audioplayer` CMake `else()`/`LINUX` branch via `libasound`).
+- The GUI layer `grappix` already has a standard-Linux desktop-GL branch
+  (`elseif(UNIX)` → `window_pc.cpp` + GLFW3 + GLEW + OpenGL + X11).
+- The player engine, all decoder plugins, Lua/sol2, webutils (libcurl), etc. are
+  portable C/C++ already built for Linux elsewhere.
+
+**Critical trap to avoid:** the repo has *stale* "Raspberry Pi" plumbing written
+for the **original 32-bit ARMv6 Pi (Pi 1/Zero)**, and it is actively wrong for a
+Pi 5:
+
+- Root `CMakeLists.txt` `if(RASPBERRYPI)` forces
+  `-march=armv6 -mfpu=vfp -mfloat-abi=hard` — a 32-bit ARMv6 target that will not
+  even compile for the Pi 5's Cortex-A76/aarch64.
+- `grappix/CMakeLists.txt` `elseif(RASPBERRY)` uses `window_pi.cpp` + `eglutil.cpp`
+  and links `EGL GLESv2 vcos vchiq_arm bcm_host` — the **legacy Broadcom
+  VideoCore userland**, which was **removed on the Pi 5** (Pi 5 uses the
+  open-source Mesa **V3D** driver with full desktop OpenGL under KMS/DRM).
+
+So the plan is emphatically: **do NOT set `RASPBERRYPI`/`RASPBERRY`.** Build the
+Pi 5 through the *ordinary Linux/UNIX code paths* that already exist, add a small
+amount of Apple-code conditionalization, and supply aarch64-Linux dependencies
+via `apt`. The "RPi-specific" defines are a distraction inherited from a
+different era of Pi.
+
+---
+
+## 2. Platform delta: macOS/Apple Silicon vs. Raspberry Pi 5
+
+Both are 64-bit ARM, so the *CPU architecture* is not the hard part. The deltas
+are all **OS / toolchain / dependency** level:
+
+| Concern | macOS / Apple Silicon (current) | Raspberry Pi 5 (target) |
+|---|---|---|
+| OS | macOS (Tahoe) | Raspberry Pi OS *64-bit* (Debian Bookworm) — must be the 64-bit image |
+| CPU/ABI | Apple M-series, `arm64` (Mach-O) | Cortex-A76, `aarch64` (ELF) |
+| Compiler | AppleClang | system GCC (or clang) from apt |
+| Dep manager | Homebrew (`/opt/homebrew`) | `apt` (system `/usr`), or vendored/source |
+| Audio | CoreAudio / AudioToolbox (`player_osx.cpp`) | **ALSA** `libasound` (`player_linux.cpp`) — already present |
+| GUI/GL | Cocoa + OpenGL via Apple frameworks | X11/Wayland + **Mesa** desktop GL, GLFW3, GLEW |
+| Native UI glue | `NativeDialogs.mm`, `CheckForUpdate.mm` (Obj-C/AppKit) | needs Linux stubs / GTK-portal (see §4) |
+| Frameworks | `-framework CoreFoundation IOKit Cocoa AudioToolbox …` | none — drop the whole `APPLE_FRAMEWORKS` list |
+| Bundling | `.app` bundle, `MACOSX_BUNDLE`, `package_app.sh` | tarball / `.deb` / AppImage (see §7) |
+| FFmpeg | bundled `bin/ffmpeg` (arm64 Mach-O) + `avcodec/...` | aarch64-Linux `ffmpeg` + `libav*-dev` from apt |
+| SunVox lib | prebuilt macOS arm64 `.dylib` (dlopen'd) | prebuilt **Linux ARM64** `.so` from SunVox (see §6) |
+
+**Good news:** most of the root `CMakeLists.txt` Apple specifics are already
+`if(APPLE)`-guarded (homebrew paths, `CMAKE_OSX_*`, frameworks list, bundle
+install). The Linux path largely falls through correctly today.
+
+---
+
+## 3. What already works vs. what must change
+
+**Already Linux-ready (should just build):**
+- All decoder plugins (`MUSICPLAYER_PLUGINS`) — portable C/C++ emulator cores.
+- ALSA audio backend, grappix desktop-GL/X11 path, Lua/sol2, webutils/libcurl,
+  sqlite3, freetype, fft, lhasa/unrar.
+- The textmode `cm` target and `cmtest` (both defined `if(NOT WIN32)` / always).
+
+**Must change for Pi 5 (the actual work):**
+1. **Objective-C `.mm` files are compiled unconditionally.** Root
+   `CMakeLists.txt` `MAIN_FILES` includes `src/CheckForUpdate.mm` and
+   `src/NativeDialogs.mm` with no `if(APPLE)` guard — and `MAIN_FILES` is used by
+   **all three** targets (`chipmachine`, `cm`, `cmtest`). These are Obj-C/AppKit
+   and will not compile on Linux. **This is the #1 blocker.** Fix: move the two
+   `.mm` files into an `APPLE`-only source list, and add Linux stub `.cpp`s
+   providing the same symbols the rest of the code links against — at minimum
+   `InitializeUpdateVerificationSubsystem()` (called from `main.cpp`) and
+   `ChipMachine::open_file_dialog()` (GUI). The update check can be a no-op; the
+   file dialog can be a GTK/xdg-desktop-portal call or a stub.
+2. **Stale RPi CMake branches must be bypassed.** Ensure the build does **not**
+   define `RASPBERRYPI` (root CMake, the ARMv6 flags) nor `RASPBERRY` (grappix,
+   the bcm_host branch). The Pi 5 must fall through to the generic Linux/`UNIX`
+   paths. Optionally delete/rewrite those branches so nobody re-triggers them.
+3. **`build.py` `--target raspberry` is a stub.** The arg is parsed but never
+   wired into `buildArgs` (there is a commented-out `-DCMAKE_TOOLCHAIN_FILE`).
+   Either (a) native-build on the Pi so `--target native` is all that's needed,
+   or (b) implement a real aarch64 toolchain file for cross-compiling (§5).
+4. **Dependencies must come from apt, not brew** (§6).
+5. **FFmpeg**: replace the bundled arm64-Mach-O `bin/ffmpeg` with an aarch64
+   Linux `ffmpeg` (apt), and link `libavcodec/format/util/swresample` from apt
+   `-dev` packages. The FFMPEG plugin also shells out to the `ffmpeg` binary for
+   streaming/YouTube — that just needs the Linux binary on `PATH`.
+6. **Packaging** is `.app`-centric (`package_app.sh`, `MACOSX_BUNDLE`, install
+   bundle block) — need a Linux packaging path (§7).
+
+---
+
+## 4. Native UI glue (the `.mm` problem in detail)
+
+The two Objective-C files encapsulate the only truly Apple-specific app logic:
+- `NativeDialogs.mm` → `open_file_dialog()` (NSOpenPanel).
+- `CheckForUpdate.mm` → update verification subsystem.
+
+Recommended approach:
+- Introduce a platform split: `APPLE` builds keep the `.mm` files; non-Apple
+  builds compile `src/NativeDialogs_linux.cpp` + `src/CheckForUpdate_linux.cpp`
+  (new) providing the same C++/`extern "C"` symbols.
+- v1 Linux stubs: `InitializeUpdateVerificationSubsystem()` = no-op;
+  `open_file_dialog()` = return empty / a minimal implementation. The player's
+  core value (search + play from the remote DB) does not depend on either.
+- Later: wire `open_file_dialog()` to `xdg-desktop-portal` (GTK) if a local-file
+  open is wanted on the Pi.
+
+This keeps the source single-tree: the same `.cpp`/`.h` compile everywhere;
+only the two platform glue files diverge, selected in CMake by `if(APPLE)`.
+
+---
+
+## 5. Build model decision: native-on-Pi vs. cross-compile
+
+Two supported ways to produce the aarch64 binary — pick per team workflow:
+
+- **Option A — native compile on the Pi 5 (recommended first).**
+  - The Pi 5 (4–8 GB RAM, NVMe/USB3 SSD advised) can compile the tree with
+    `ninja`. It *is* a large codebase (60+ vendored emulator forks), so expect a
+    long first build; use `ccache` (already wired in root CMake) and a swap file
+    or `-j` tuned to RAM. Build in Release.
+  - Steps: install apt deps (§6) → `cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..`
+    → `ninja`. No toolchain file, no `RASPBERRYPI` define.
+  - Pro: simplest, no sysroot drift, dependencies resolve naturally. Con: slow
+    iteration.
+
+- **Option B — cross-compile from an x86-64 Linux host (or the Mac) for speed.**
+  - Use an `aarch64-linux-gnu` GCC toolchain + a Pi OS **sysroot** (rsync'd from
+    the Pi) and a real CMake toolchain file (`rpi5-aarch64.cmake` setting
+    `CMAKE_SYSTEM_NAME=Linux`, `CMAKE_SYSTEM_PROCESSOR=aarch64`, the cross
+    compilers, and `CMAKE_SYSROOT`/`CMAKE_FIND_ROOT_PATH`).
+  - Wire this into `build.py`'s existing `--target raspberry` (currently inert):
+    have it append `-DCMAKE_TOOLCHAIN_FILE=rpi5-aarch64.cmake`.
+  - Pro: fast, CI-friendly. Con: sysroot setup, every apt dependency must exist
+    in the sysroot, harder for the vendored libs that probe the host.
+  - A pragmatic middle ground: cross-build inside an **aarch64 container**
+    (QEMU/`docker buildx --platform linux/arm64`) with apt — no sysroot juggling,
+    reproducible, works in CI.
+
+**Recommendation:** bring the port up with **Option A** (fastest path to a known-
+good binary), then add **Option B (container)** for repeatable/CI builds and
+releases.
+
+---
+
+## 6. Dependencies (apt equivalents of the brew list)
+
+The macOS README installs via brew: `git cmake ninja freetype glew glfw3 lua
+fftw mpg123 python ffmpeg boost`. Debian/Pi OS equivalents (dev packages):
+
+- Toolchain: `build-essential cmake ninja-build ccache pkg-config git python3`
+- Audio: `libasound2-dev` (ALSA — the Linux audio backend), `libmpg123-dev`
+- FFmpeg: `ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswresample-dev`
+- GUI/GL: `libglfw3-dev libglew-dev libgl1-mesa-dev libfreetype-dev`
+  and X11 dev libs (`libx11-dev libxxf86vm-dev libxrandr-dev libxi-dev
+  libxinerama-dev libxcursor-dev`) — matching grappix's `UNIX` link list
+- Misc: `liblua5.x-dev` (or use the vendored `external/lua`), `libfftw3-dev`,
+  `libboost-all-dev` (for `boost::di`), `zlib1g-dev`
+- SunVox: download the official SunVox library package, which ships a
+  **Linux `arm64`** `.so`; point `SUNVOX_RUNTIME_LIB` at it (the CMake already
+  copies that blob next to each binary). If unavailable/undesirable, drop the
+  `sunvoxplugin` from `MUSICPLAYER_PLUGINS` for the Pi build.
+
+Most heavy third-party code is **vendored** under `external/` and compiles from
+source, so the apt list is mainly the system libs above plus GL/X11.
+
+**Watch items during first build (portability):**
+- Any x86 SSE/AVX intrinsics or Apple-specific NEON in vendored plugin cores —
+  aarch64 has NEON but not x86 intrinsics; guard or provide scalar fallbacks.
+- Endianness is fine (both little-endian).
+- Plugins that assume a subprocess/`posix_spawn` (ffmpeg/yt-dlp) work on Linux as
+  long as the binaries are on `PATH`.
+- `bin/ffmpeg` in the tree is a Mach-O binary — must not be shipped/used on Pi.
+
+---
+
+## 7. Packaging for the Pi
+
+macOS uses `package_app.sh` + `MACOSX_BUNDLE` + the `install()` bundle block (all
+already `if(APPLE)`-guarded). For the Pi, add a Linux packaging path:
+
+- **Simplest:** a `cmake --install` layout + tarball that places the `cm` /
+  `chipmachine` binaries alongside `lua/`, `data/`, `music/`, and the SunVox
+  `.so`, mirroring the resource layout the code expects
+  (`resolve_resource_root()`).
+- **Nicer:** a `.deb` (or AppImage) so `apt install ./chipmachine.deb` pulls the
+  runtime deps. Ship a `.desktop` entry for the GUI target.
+- Ensure runtime resource resolution finds `lua/`/`data/` on Linux (verify the
+  non-Apple branch of `resolve_resource_root()` / `Environment` paths).
+
+---
+
+## 8. Step-by-step execution plan
+
+**Phase 0 — Provision (0.5 day)**
+- Flash 64-bit Raspberry Pi OS (Bookworm) on a Pi 5; attach SSD; enable a swap
+  file for the first big build. Install the apt deps (§6). Confirm `uname -m` =
+  `aarch64`.
+
+**Phase 1 — Make the tree Linux-clean (2–4 days) — the core CMake work**
+- Guard the two `.mm` files as `APPLE`-only in `MAIN_FILES`; add Linux stubs
+  (`NativeDialogs_linux.cpp`, `CheckForUpdate_linux.cpp`) (§4).
+- Ensure `RASPBERRYPI`/`RASPBERRY` are never defined; confirm the build takes the
+  generic Linux/`UNIX` grappix branch and the ALSA audio branch.
+- Drop `APPLE_FRAMEWORKS` and `avcodec/...` come from apt on Linux (already
+  conditioned by falling through the `if(APPLE)` blocks — verify link lists).
+- Decide SunVox: bundle Linux arm64 `.so` or drop the plugin.
+
+**Phase 2 — First native build of `cm` (textmode) (2–4 days)**
+- Build **only the `cm` target first** (`-DTEXTMODE_ONLY`, no GL/GUI) — the
+  smallest thing that exercises engine + all decoder plugins + ALSA. This is the
+  fastest route to "the same player runs on the Pi 5."
+- Triage per-plugin compile failures (intrinsics/portability); disable any
+  stubborn plugin temporarily by trimming `MUSICPLAYER_PLUGINS` to keep momentum,
+  then re-enable.
+- **Milestone: `./cm <file>` plays a tune through ALSA on the Pi 5.**
+
+**Phase 3 — Full GUI build (2–5 days)**
+- Build the `chipmachine` GUI target (grappix desktop GL + GLFW3 + freetype).
+  Validate under the Pi's Wayland/X11 desktop and Mesa V3D.
+- Validate the database/search flow and remote fetch (RemoteLoader/libcurl) on
+  the Pi.
+
+**Phase 4 — Run `cmtest` & harden (2–3 days)**
+- Build/run `cmtest` on the Pi to validate decoders match expected output on
+  aarch64. Fix any endian/intrinsic/UB divergences surfaced.
+
+**Phase 5 — Tooling & packaging (2–4 days)**
+- ✅ **Done:** `build.py --target raspberry` is wired to the cross toolchain file
+  `rpi5-aarch64.cmake`, with per-target build trees (Option B, §5). See §11.
+- Add the container/CI cross-build wrapper around the above.
+- Produce a Linux artifact (tarball/.deb/AppImage) and document the runtime deps.
+
+---
+
+## 9. Risks / open questions
+
+- **Per-plugin portability**: the biggest unknown is whether all 60+ vendored
+  emulator cores build cleanly on aarch64/GCC without Apple/x86 assumptions. The
+  trim-and-re-enable approach in Phase 2 bounds this risk.
+- **Native build time/RAM** on the Pi (mitigate with ccache + swap + SSD, or
+  cross-compile).
+- **SunVox** has no source (prebuilt blob) — depends on an available Linux arm64
+  build; otherwise dropped on Pi.
+- **File-dialog / update-check** get stubbed on Linux initially (acceptable for
+  v1; the core player doesn't need them).
+- **GL driver**: Pi 5 Mesa V3D generally provides adequate desktop GL for
+  grappix's 2D/text rendering; confirm the GL version grappix requires is met
+  (fall back to GLES path only if necessary — but *not* the removed bcm_host
+  path).
+- **Legal**: same GPLv3 combined-work terms as macOS; unchanged by the Pi target.
+
+---
+
+## 10. Immediate next actions
+
+1. ✅ **Done:** Phase 1 CMake changes landed — the Objective-C `.mm` files are
+   now `APPLE`-only, non-Apple builds compile `src/CheckForUpdate_stub.cpp` +
+   `src/NativeDialogs_stub.cpp`, and the stale ARMv6 `RASPBERRYPI` branch carries
+   a warning so it is never enabled for a Pi 5. `build.py --target raspberry` and
+   the `rpi5-aarch64.cmake` cross toolchain are in place (§11).
+2. Provision a 64-bit Pi 5 and install the apt dependency set (§6).
+3. Native-build **`cm`** on the Pi and get one tune playing through ALSA — the
+   minimal proof that the same codebase runs on the Raspberry Pi 5.
+
+---
+
+## 11. Building for Raspberry Pi 5
+
+There are two supported workflows. Both build from the **same source tree** and
+produce a 64-bit `aarch64` binary; neither uses the legacy 32-bit ARMv6
+`RASPBERRYPI` path or the removed Broadcom `bcm_host` GL path (§1).
+
+> Prerequisite for either: a **64-bit** Raspberry Pi OS (Debian Bookworm) image.
+> Confirm with `uname -m` → `aarch64`.
+
+### Option A — native build, on the Pi 5 (recommended first)
+
+This is just an ordinary Linux build; `--target native` needs no special flags.
+
+```bash
+# 1. Install dependencies (see §6 for the full list)
+sudo apt update
+sudo apt install build-essential cmake ninja-build ccache pkg-config git python3 \
+    libasound2-dev libmpg123-dev \
+    ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+    libglfw3-dev libglew-dev libgl1-mesa-dev libfreetype-dev \
+    libx11-dev libxxf86vm-dev libxrandr-dev libxi-dev libxinerama-dev libxcursor-dev \
+    libfftw3-dev libboost-all-dev zlib1g-dev
+
+# 2. Build. Bring up the small textmode target first (Phase 2 milestone):
+./build.py build --target native            # builds into builds/release/
+#   or, to target just the textmode player during bring-up:
+#   cmake -B builds/release -GNinja -DCMAKE_BUILD_TYPE=Release
+#   ninja -C builds/release cm
+
+# 3. Play a tune through ALSA:
+./builds/release/cm <song-file>
+```
+
+Notes:
+- The tree is large (60+ vendored emulator forks). `ccache` is already wired in
+  the root CMake; add a swap file and build off an SSD to keep RAM/time sane.
+- `--target native` keeps the original `builds/<config>/` layout unchanged.
+
+### Option B — cross-compile, from another host (fast / CI)
+
+Uses the `rpi5-aarch64.cmake` toolchain file wired into `build.py`.
+
+```bash
+# On an x86-64 (or other) Linux host:
+sudo apt install crossbuild-essential-arm64   # aarch64-linux-gnu-g++, etc.
+
+# A sysroot = a copy of the Pi's root filesystem, so target headers/libs resolve.
+# Populate the Pi with the apt deps above first, then:
+rsync -a --rsync-path="sudo rsync" pi@raspberrypi:/{lib,usr} /path/to/pi-rootfs/
+export RPI_SYSROOT=/path/to/pi-rootfs
+
+./build.py build --target raspberry           # builds into builds/raspberry-release/
+```
+
+This runs, under the hood:
+
+```
+cmake -Bbuilds/raspberry-release -H. -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=<repo>/rpi5-aarch64.cmake -GNinja
+```
+
+The toolchain file (`rpi5-aarch64.cmake`, repo root):
+- sets `CMAKE_SYSTEM_NAME=Linux`, `CMAKE_SYSTEM_PROCESSOR=aarch64`;
+- uses the `aarch64-linux-gnu-` compilers (override the triple with
+  `-DCROSS_PREFIX=...`);
+- tunes for the Pi 5 with **`-mcpu=cortex-a76`** (not the legacy `-march=armv6`);
+- honours `RPI_SYSROOT` (`-DRPI_SYSROOT=` or the env var) and points
+  `pkg-config` into the sysroot.
+
+Each non-native target lives in its own `builds/<target>-<config>/` tree, so the
+cross build's CMake cache never collides with a native one.
+
+A reproducible middle ground (§5) is to run Option B **inside an `arm64`
+container** (`docker buildx --platform linux/arm64`) with the apt deps installed
+normally — no sysroot to maintain. The cross-build artifact is then copied to the
+Pi to run.
+
+### What Phase 1 changed to make this build
+
+- Root `CMakeLists.txt`: the two Objective-C glue files are now `APPLE`-only;
+  non-Apple builds compile `src/CheckForUpdate_stub.cpp` (no-op update check) and
+  `src/NativeDialogs_stub.cpp` (`open_file_dialog()` returns `""`).
+- The legacy ARMv6 `if(RASPBERRYPI)` branch carries a warning comment — leave it
+  **off** for the Pi 5.
+- `build.py` gained working `--target raspberry` handling + per-target build
+  dirs; `rpi5-aarch64.cmake` was added.

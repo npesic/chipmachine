@@ -55,12 +55,36 @@ buildsystems = { 'make' : ['-GUnix Makefiles'],
                  'ninja' : [ '-GNinja',  ]
                }
 
+scriptDir = os.path.dirname(os.path.abspath(__file__))
+
+# (Cross-)compilation targets -> extra CMake args.
+#   native    : build for the host. NOTE: an on-device build directly on a
+#               Raspberry Pi 5 is a *native* build -- use --target native there.
+#   raspberry : cross-compile for a Raspberry Pi 5 (64-bit aarch64 / Cortex-A76,
+#               Raspberry Pi OS) from another host via the rpi5-aarch64 toolchain
+#               file. Point it at a copy of the Pi's root filesystem by setting
+#               the RPI_SYSROOT env var (or -DRPI_SYSROOT=... in CMake).
+#   windows/android : reserved (not wired yet).
+targets = { 'native'    : [],
+            'raspberry' : ['-DCMAKE_TOOLCHAIN_FILE=' +
+                           os.path.join(scriptDir, 'rpi5-aarch64.cmake')],
+            'windows'   : [],
+            'android'   : [],
+          }
+
 buildTool = args.buildsystem;
 buildArgs = []
 buildArgs += configs[args.config][1]
+buildArgs += targets[args.target]
 buildArgs.append(buildsystems[args.buildsystem][0])
 #buildArgs.append('-DCMAKE_TOOLCHAIN_FILE=clang.cmake')
-outputDir = os.path.join(args.output, configs[args.config][0])
+
+# Give each (cross-)target its own build tree so their CMake caches, which pin
+# the compiler/toolchain, never collide with the native one.
+outputSubDir = configs[args.config][0]
+if args.target != 'native':
+    outputSubDir = args.target + '-' + outputSubDir
+outputDir = os.path.join(args.output, outputSubDir)
 
 try :
     os.makedirs(outputDir)

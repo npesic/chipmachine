@@ -54,6 +54,12 @@ set(VICE_ROOT ${VICE_ROOT} CACHE PATH "Where vice is checked out")
 include(${AP1_ROOT}/cmake/Utils.cmake)
 
 # Platform specific flag adjustments
+#
+# NOTE: RASPBERRYPI here is the LEGACY 32-bit ARMv6 target (Raspberry Pi 1 /
+# Zero). Do NOT enable it for a Raspberry Pi 5: the Pi 5 is a 64-bit aarch64
+# (Cortex-A76) machine running 64-bit Raspberry Pi OS and builds through the
+# standard Linux/UNIX code paths with no special march flags. Forcing -march=armv6
+# on a Pi 5 would fail to compile.
 if(RASPBERRYPI)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv6 -mfpu=vfp -mfloat-abi=hard")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv6 -mfpu=vfp -mfloat-abi=hard")
@@ -169,6 +175,24 @@ if(APPLE)
     )
 endif()
 
+# Platform-specific native glue.
+#   - CheckForUpdate: InitializeUpdateVerificationSubsystem() (called from main.cpp)
+#   - NativeDialogs:  ChipMachine::open_file_dialog() (called from GUI commands)
+# The macOS implementations are Objective-C (AppKit/Foundation); every other
+# platform (Linux/Raspberry Pi, etc.) compiles C++ stubs that provide the same
+# symbols so the shared source tree links everywhere.
+if(APPLE)
+    set(PLATFORM_GLUE_FILES
+        src/CheckForUpdate.mm
+        src/NativeDialogs.mm
+    )
+else()
+    set(PLATFORM_GLUE_FILES
+        src/CheckForUpdate_stub.cpp
+        src/NativeDialogs_stub.cpp
+    )
+endif()
+
 # Source file layout declarations
 set(MAIN_FILES
     src/MusicDatabase.cpp
@@ -182,8 +206,7 @@ set(MAIN_FILES
     src/state_machine.cpp
     src/youtube.cpp
     src/textmode.cpp
-    src/CheckForUpdate.mm
-    src/NativeDialogs.mm
+    ${PLATFORM_GLUE_FILES}
 )
 
 set(GUI_FILES
