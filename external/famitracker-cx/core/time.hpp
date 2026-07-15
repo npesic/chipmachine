@@ -7,6 +7,7 @@
 
 #if defined(UNIX)
 #include <sys/time.h>
+#include <unistd.h>   // usleep() -- not pulled in transitively by <sys/time.h> on glibc
 
 namespace core
 {
