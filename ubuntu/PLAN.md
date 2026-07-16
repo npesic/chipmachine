@@ -4,6 +4,15 @@ Goal: reach the same milestone as the Raspberry Pi 5 — the text-mode `cm`
 executable (and by extension `chipmachine`, `cmtest`, `mksonglist`) compiling and
 linking on Ubuntu.
 
+## Status
+
+**Milestone reached** on Ubuntu 22.04 x86_64 (GCC 11, under WSL): `cm` and
+`cmtest` link. Getting there took the base deps below plus a few configure-time
+`-dev` packages (FreeType, Boost, FFTW) and three tree fixes — a CMake `SYSTEM`-
+keyword guard (3.22 compat), and one GCC-11 compile fix (`ppz8.h` `<stdatomic.h>`
+in C++). The GUI `chipmachine` target additionally needs the X11/GL dev packages
+in §7 (e.g. `libxxf86vm-dev`).
+
 ## TL;DR
 
 Ubuntu is **most of the way there already**. Every one of the 12 fixes made for
@@ -93,8 +102,12 @@ For the GUI `chipmachine` target later (NOT needed for the `cm` milestone), add:
 ```sh
 sudo apt install -y \
     libgl1-mesa-dev libglu1-mesa-dev libglew-dev libglfw3-dev \
-    libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
+    libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev \
+    libxxf86vm-dev
 ```
+
+(`libxxf86vm-dev` provides `libXxf86vm` — grappix links `-lXxf86vm` for the X11
+VidMode extension.)
 
 ## 4. Phase 2 — Native build
 
