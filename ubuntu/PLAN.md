@@ -68,11 +68,14 @@ sudo apt install -y \
     zlib1g-dev \
     libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
     libfreetype-dev \
-    libboost-dev
+    libboost-dev \
+    libfftw3-dev
 ```
 
 `libboost-dev` (headers only — zxtune uses header-only Boost, `find_package(Boost
 REQUIRED)` with no components) is a configure-time dep for the zxtuneplugin.
+`libfftw3-dev` supplies single-precision FFTW (`libfftw3f` + `fftw3.h`) for the
+apone `fft`/spectrum module, which is defined unconditionally at generate time.
 
 Note: **`libfreetype-dev` is a configure-time dependency even for `cm`**, not a
 GUI-only one — grappix's `CMakeLists.txt` runs `find_package(Freetype REQUIRED)`
