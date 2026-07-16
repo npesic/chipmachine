@@ -6,12 +6,32 @@ linking on Ubuntu.
 
 ## Status
 
-**Milestone reached** on Ubuntu 22.04 x86_64 (GCC 11, under WSL): `cm` and
-`cmtest` link. Getting there took the base deps below plus a few configure-time
-`-dev` packages (FreeType, Boost, FFTW) and three tree fixes — a CMake `SYSTEM`-
-keyword guard (3.22 compat), and one GCC-11 compile fix (`ppz8.h` `<stdatomic.h>`
-in C++). The GUI `chipmachine` target additionally needs the X11/GL dev packages
-in §7 (e.g. `libxxf86vm-dev`).
+**Milestone reached and audio verified** on Ubuntu 22.04 x86_64 (GCC 11, under
+WSL): `cm` and `cmtest` link, and `./cm <song>.mod` **plays sound**. Getting
+there took the base deps below plus a few configure-time `-dev` packages
+(FreeType, Boost, FFTW) and these tree fixes:
+
+- CMake `SYSTEM`-keyword guard (3.22 compat) — §1 issue.
+- `ppz8.h` `<stdatomic.h>`-in-C++ guard (GCC 11 lacks GCC 12's support).
+- `player_linux.h` `set_volume` now maps 0..100 into the mixer element's actual
+  range (the old code wrote a fixed centibel value ignoring [min,max], which on a
+  PulseAudio/PipeWire-bridged mixer drove volume to ~0) and never aborts on a
+  missing mixer.
+- **`MusicDatabase` is no longer constructed eagerly** — direct-file playback
+  (`cm <song>`) does not need it, and opening its SQLite DB **hangs on WSL's
+  `/mnt/c` (drvfs)** due to poor POSIX advisory locking. This was the actual
+  cause of "no sound": cm blocked in DB init before playback ever started.
+
+The GUI `chipmachine` target additionally needs the X11/GL dev packages in §7
+(e.g. `libxxf86vm-dev`).
+
+### WSL caveat: keep the repo (and cache) off `/mnt/c`
+
+`cm` defaults to **text mode** with no args, and text/GUI (browse/search) modes
+*do* build `MusicDatabase` (lazily). On `/mnt/c` that SQLite init can hang the
+same way. The robust fix is the standard WSL guidance: put the checkout — and the
+cache dir it derives — on the **native ext4** filesystem (`~/…`), not the mounted
+Windows drive. `/mnt/c` is also far slower for the build itself.
 
 ## TL;DR
 
