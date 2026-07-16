@@ -67,8 +67,12 @@ sudo apt install -y \
     libmpg123-dev \
     zlib1g-dev \
     libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
-    libfreetype-dev
+    libfreetype-dev \
+    libboost-dev
 ```
+
+`libboost-dev` (headers only — zxtune uses header-only Boost, `find_package(Boost
+REQUIRED)` with no components) is a configure-time dep for the zxtuneplugin.
 
 Note: **`libfreetype-dev` is a configure-time dependency even for `cm`**, not a
 GUI-only one — grappix's `CMakeLists.txt` runs `find_package(Freetype REQUIRED)`
