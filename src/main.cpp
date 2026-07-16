@@ -291,6 +291,13 @@ int main(int argc, char* argv[])
         music_db.forceRebuild();
     }
 
+    static const bool _audiodbg = std::getenv("CM_AUDIO_DEBUG") != nullptr;
+    if (_audiodbg) {
+        fprintf(stderr, "[cm] songs=%zu text_mode=%d\n",
+                options.songs.size(), (int)options.text_mode);
+        fflush(stderr);
+    }
+
     if (!options.songs.empty()) {
         int pos = 0;
 #ifdef ENABLE_CONSOLE
@@ -301,7 +308,13 @@ int main(int argc, char* argv[])
 
         while (true) {
             if (pos >= options.songs.size()) return 0;
-            music_player->playFile(options.songs[pos++].path);
+            bool _ok = music_player->playFile(options.songs[pos++].path);
+            if (_audiodbg) {
+                fprintf(stderr, "[cm] playFile('%s') = %d, playing=%d\n",
+                        options.songs[pos - 1].path.c_str(), (int)_ok,
+                        (int)music_player->playing());
+                fflush(stderr);
+            }
             SongInfo info = music_player->getPlayingInfo();
             utils::print_fmt(
                 "Playing: %s\n",
