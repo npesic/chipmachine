@@ -66,16 +66,27 @@ sudo apt install -y \
     libcurl4-openssl-dev \
     libmpg123-dev \
     zlib1g-dev \
-    libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+    libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+    libfreetype-dev
 ```
+
+Note: **`libfreetype-dev` is a configure-time dependency even for `cm`**, not a
+GUI-only one — grappix's `CMakeLists.txt` runs `find_package(Freetype REQUIRED)`
+and grappix is added to the tree unconditionally, so configure fails without it
+regardless of which target you build. (On Ubuntu 22.04 the package may be named
+`libfreetype6-dev`.)
+
+CMake version: Ubuntu 22.04 ships **CMake 3.22**, 24.04 ships 3.28. The tree
+declares a 3.15 minimum and is kept compatible with it — e.g. the
+`add_subdirectory(... SYSTEM)` calls are guarded so 3.22 doesn't misparse the
+3.25-only `SYSTEM` keyword. No newer CMake needs to be installed.
 
 For the GUI `chipmachine` target later (NOT needed for the `cm` milestone), add:
 
 ```sh
 sudo apt install -y \
     libgl1-mesa-dev libglu1-mesa-dev libglew-dev libglfw3-dev \
-    libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev \
-    libfreetype-dev
+    libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
 ```
 
 ## 4. Phase 2 — Native build

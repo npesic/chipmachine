@@ -119,8 +119,16 @@ endif()
 # ---------------------------------------------------------------------------
 # Subdirectories & Dependency Layout (Processed early)
 # ---------------------------------------------------------------------------
-add_subdirectory(external/lua SYSTEM)
-add_subdirectory(external/sol2 SYSTEM)
+# The SYSTEM keyword for add_subdirectory (marks these vendored deps' headers as
+# system, silencing their warnings) was only added in CMake 3.25. This project
+# supports 3.15+ (Ubuntu 22.04 ships CMake 3.22), where SYSTEM would instead be
+# misread as the binary-dir argument -- both calls then collide on a dir named
+# "SYSTEM". Pass the keyword only when the running CMake understands it.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
+    set(_vendored_system SYSTEM)
+endif()
+add_subdirectory(external/lua ${_vendored_system})
+add_subdirectory(external/sol2 ${_vendored_system})
 
 set(CORE_MODULES coreutils audioplayer archive webutils sqlite3 xml bbsutils crypto)
 set(GUI_MODULES grappix fft)
