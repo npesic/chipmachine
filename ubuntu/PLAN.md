@@ -128,12 +128,15 @@ items — the only class the Pi couldn't have surfaced:
    Triage approach: these are the same "read the failing TU, find the `#ifdef`"
    loop used for the Pi. Expect ≤ a handful, if any.
 
-2. **Newer-GCC strictness (Ubuntu 24.04 / GCC 13–14).** GCC 13+ promotes more
-   things to hard errors and tightened headers. Possible extra "missing include"
-   fixes in the exact shape of issues #1/#3/#6/#7 (add the header that clang/older
-   glibc pulled in transitively). GCC 13+ also makes C++ `<stdatomic.h>` work,
-   which only *helps* (fix #2 stays correct either way). On 22.04 (GCC 11/12) this
-   is essentially a non-issue since Bookworm/GCC 12 is already validated.
+2. **GCC-version drift from the validated GCC 12 — in *both* directions.** The Pi
+   was validated on GCC 12; Ubuntu 22.04 ships GCC 11, 24.04 ships GCC 13/14.
+   - *Older (22.04 / GCC 11):* lacks features GCC 12 has. Concretely, GCC 11's
+     `<stdatomic.h>` does **not** work in C++ (no `_Atomic` in its C++ front end),
+     which broke `fmpplugin` via `ppz8.h` — fixed by guarding that redundant
+     include to C-only. Watch for similar "GCC 12 accepted it, GCC 11 doesn't."
+   - *Newer (24.04 / GCC 13–14):* stricter — more hard errors, tightened headers;
+     possible extra one-line "missing include" fixes in the shape of #1/#3/#6/#7.
+     GCC 13+ makes C++ `<stdatomic.h>` work, which only helps.
 
 3. **Nothing to *un*-fix.** The stale `RASPBERRYPI`/`RASPBERRY`/bcm_host paths are
    never touched by a native Ubuntu build (same as native Pi), so there is no

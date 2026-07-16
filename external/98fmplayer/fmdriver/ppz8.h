@@ -3,7 +3,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+// ppz8.h itself uses no atomics; this include exists only for leveldata.h below,
+// which now pulls the atomics it needs itself (<atomic> in C++, <stdatomic.h> in
+// C). Including <stdatomic.h> from C++ is broken on GCC < 13 (no _Atomic keyword
+// in the C++ front end), so restrict it to C.
+#ifndef __cplusplus
 #include <stdatomic.h>
+#endif
 #include "leveldata/leveldata.h"
 
 #ifdef __cplusplus
