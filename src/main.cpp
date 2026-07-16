@@ -286,8 +286,15 @@ int main(int argc, char* argv[])
 
     LOGD("WorkDir:%s", work_dir);
 
-    auto& music_db = injector.create<chipmachine::MusicDatabase&>();
+    // The search database is only needed for the browse/search (text + GUI)
+    // modes, where ChipInterface / ChipMachine pull it in lazily (it is a DI
+    // singleton). Do NOT construct it eagerly here: direct-file playback
+    // (`cm <song>`) never touches it, and opening the SQLite DB can block on
+    // filesystems with poor POSIX advisory locking -- notably WSL's /mnt/c
+    // (drvfs), where it hangs before playback ever starts. Only force it when
+    // the user explicitly asked for a reindex.
     if (options.force_reindex) {
+        auto& music_db = injector.create<chipmachine::MusicDatabase&>();
         music_db.forceRebuild();
     }
 
