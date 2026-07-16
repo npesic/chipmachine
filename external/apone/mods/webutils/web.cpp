@@ -225,7 +225,16 @@ void WebJob::start(CURLM *curlm) {
 	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-	
+	// Only CONNECTTIMEOUT was set, so a host that connects and then STALLS (no
+	// data) has no overall bound: the transfer never finishes, WebJob::finish()
+	// never runs, and getFileBlocking() spins forever. That hangs the SYNCHRONOUS
+	// first-run DB indexing (text mode fetches a remote song_list per collection)
+	// before the UI ever appears. Abort a transfer that delivers < 1 byte/s for
+	// 30s. A low-speed guard (rather than a flat CURLOPT_TIMEOUT) still allows
+	// slow-but-progressing large downloads (e.g. big song zips).
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+
 
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunc);

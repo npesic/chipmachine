@@ -33,6 +33,75 @@ same way. The robust fix is the standard WSL guidance: put the checkout — and 
 cache dir it derives — on the **native ext4** filesystem (`~/…`), not the mounted
 Windows drive. `/mnt/c` is also far slower for the build itself.
 
+---
+
+## Milestone 2 — Working text mode (`./cm -X`)
+
+Goal: the interactive terminal browser (search → select → play), not just
+one-file playback.
+
+### Why `./cm -X` currently "hangs"
+
+Both blocking stages run **synchronously inside the `ChipInterface`
+constructor** (`main.cpp` text-mode branch → `injector.create<ChipInterface>()`
+→ ctor → `mdb.initFromLua(wd)`), *before* the console UI is ever created:
+
+1. **`MusicDatabase` construction** opens SQLite `music.db` in the cache dir.
+   On `/mnt/c` (drvfs) this blocks on POSIX advisory locks — the exact root
+   cause from Milestone 1. Direct-file mode was fixed by *skipping* the DB;
+   text mode genuinely needs it, so skipping is not an option here.
+2. **First-run indexing** (`initFromLua`) runs `lua/db.lua`, which defines
+   dozens of collections; each not-yet-indexed collection is written into
+   SQLite plus a title index. Text mode uses the **synchronous** `initFromLua`
+   (the GUI uses `initFromLuaAsync` with a progress screen), so `runConsole` —
+   and any output — does not appear until indexing finishes. On `/mnt/c` the
+   SQLite writes make this effectively a hang; even on native ext4 the first
+   run is a multi-second blank startup. Indexing is **cached** (per-collection
+   version guard + `index.dat`/`music.db`), so later launches are fast.
+
+So the "hangover" = SQLite-open hang on `/mnt/c` + synchronous first-index with
+no on-screen feedback.
+
+### Missing steps (in order)
+
+1. **Move the checkout + cache to native ext4 (`~/…`), off `/mnt/c`.** Primary
+   unblock — clears the DB-open/index hang. Same WSL guidance as Milestone 1.
+2. **Let the one-time index complete, and check it.** Watch stderr for the
+   bright-red `Error creating database '<name>'` banners (one bad row aborts
+   that collection's indexing). Confirm `index.dat` + `music.db` appear in the
+   cache dir and the *second* `./cm -X` starts instantly.
+3. **Ensure the bundled song-list data is present.** `db.lua` only adds a
+   collection if its `song_list`/`source` resolves ("*If song_list or source can
+   not be found, database will not be added*"). The shipped song lists (under
+   `data/`) are what populate the searchable index; without them the UI works
+   but the list is empty. Verify what ships vs. what is fetched on demand.
+4. **Run in a real interactive TTY.** `createLocalConsole` puts stdin into
+   termios raw mode (`tcsetattr` on `fileno(stdin)`); pipes/redirects break it.
+   Verify ANSI rendering (search field, colored list, status line) and keys:
+   type to filter, arrows to navigate, **Enter** = play, **F2** = queue,
+   **F3** = next, **F1** = pause, **Ctrl-C** = quit.
+5. **Confirm at least one playback path.** Selecting a song fetches it from the
+   collection's `source` URL via `RemoteLoader`/curl unless a `local_dir` holds
+   it — so most collections need network; a `local_dir` collection needs the
+   files present. Prove one route plays end-to-end (audio path itself is already
+   done in Milestone 1).
+
+### Definition of done
+
+- `./cm -X` reaches the browser UI within a couple seconds (after the one-time
+  index), no hang; second launch is instant.
+- Typing filters results; navigation works; **Enter** plays a song audibly.
+
+### Optional robustness (code — not required to hit the milestone)
+
+- **Progress feedback during the sync index** (print `Indexing <collection>…` to
+  stderr) so the first run doesn't look hung.
+- **SQLite resilience on slow/locky filesystems**: set a `busy_timeout` and/or
+  WAL journal mode — mitigates `/mnt/c` (native ext4 remains the real fix).
+- **Async index for text mode**: switch to `initFromLuaAsync` so the UI paints
+  immediately and indexes in the background (larger change; the ctor comment
+  notes text mode intentionally uses the sync path today).
+
 ## TL;DR
 
 Ubuntu is **most of the way there already**. Every one of the 12 fixes made for
