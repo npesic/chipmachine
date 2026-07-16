@@ -9,6 +9,8 @@
 #include <musicplayer/src/plugins/plugins.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <set>
 
 #include <variant>
@@ -75,6 +77,28 @@ void MusicPlayer::update()
 
             int samples_generated =
                 player->getSamples(&temp_buf[0], space_left - 1024);
+
+            // Opt-in runtime diagnostic: run with CM_AUDIO_DEBUG=1 in the env to
+            // trace whether the decoder is producing non-silent samples and
+            // filling the fifo. Throttled to ~every 40th fill. Remove once the
+            // Linux "no sound" issue is understood.
+            {
+                static const bool _audiodbg =
+                    std::getenv("CM_AUDIO_DEBUG") != nullptr;
+                static int _dbg = 0;
+                if (_audiodbg && (_dbg++ % 40) == 0) {
+                    int peak = 0;
+                    for (int i = 0; i < samples_generated; i++) {
+                        int a = temp_buf[i] < 0 ? -temp_buf[i] : temp_buf[i];
+                        if (a > peak) peak = a;
+                    }
+                    fprintf(stderr,
+                            "[cm-audio] getSamples=%d peak=%d fifo.filled=%d "
+                            "left=%d\n",
+                            samples_generated, peak, fifo.filled(), space_left);
+                    fflush(stderr);
+                }
+            }
 
             if (samples_generated <= 0) {
                 play_ended = samples_generated < 0;
