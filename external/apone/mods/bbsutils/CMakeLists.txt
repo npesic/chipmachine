@@ -13,11 +13,11 @@ set(SOURCE_FILES
 	editor.cpp
 	petsciiconsole.cpp
 	telnetserver.cpp
+	# localconsole.cpp is now built on every platform: it carries both the POSIX
+	# (termios) terminal and a Win32 console backend, so Console::createLocalConsole()
+	# is defined on Windows too (previously it was excluded here and returned null).
+	localconsole.cpp
 )
-
-if(NOT WIN32)
-  set(SOURCE_FILES ${SOURCE_FILES} localconsole.cpp)
-endif()
 
 add_library(bbsutils ${SOURCE_FILES})
 target_link_libraries(bbsutils netlink coreutils)

@@ -123,9 +123,25 @@ are needed if `ffmpegplugin` stays enabled — otherwise drop it for the milesto
   `bbsutils/console.h` + `createLocalConsole()` now demand) and per-plugin POSIX
   triage (Phase 4).
 
-**Phase 2 — Windows console backend (item 3).**
-Implement a `_WIN32` path in `bbsutils/localconsole.cpp` (VT output + console
-input + UTF-8). This is what makes "text mode" actually interactive on Windows.
+**Phase 2 — Windows console backend (item 3). ✅ DONE.**
+- ✅ Added a `WindowsTerminal` (Win32 console) backend in
+  `bbsutils/localconsole.{h,cpp}` that drives the console in **virtual-terminal
+  mode**: `ENABLE_VIRTUAL_TERMINAL_PROCESSING` on output (renders the ANSI that
+  `AnsiConsole` already emits), `ENABLE_VIRTUAL_TERMINAL_INPUT` + raw input on
+  stdin (arrow keys arrive as the same `ESC[...` sequences the POSIX parser
+  reads), UTF-8 output CP, and non-blocking `read()` gated on
+  `GetNumberOfConsoleInputEvents` (matches `getKey()`'s poll loop). `Console::
+  createLocalConsole()` now returns `new AnsiConsole(localTerminal)` on Windows.
+- ✅ `bbsutils/CMakeLists.txt`: `localconsole.cpp` is now compiled on **all**
+  platforms (was `if(NOT WIN32)`), so the symbol exists on Windows.
+- POSIX build verified unchanged (the termios path is byte-identical, guarded
+  `#ifndef _WIN32`). The Win32 path couldn't be compiled on the Linux dev host
+  (no MinGW there) — it needs a build in the MSYS2/MinGW environment.
+- **Next wall in bbsutils:** it links `netlink` and builds `telnetserver.cpp`,
+  which use BSD sockets; on Windows those need winsock (`ws2_32`,
+  `WSAStartup`, `closesocket`). Telnet isn't needed for the milestone, so the
+  cheapest path is to **guard `netlink`/`telnetserver` out on Windows** (or port
+  them later). Handle as part of Phase 4 triage.
 
 **Phase 3 — Audio (item 4).** Build/verify `player_win.h` (winmm) end-to-end:
 `cm believe.mod` should play.
