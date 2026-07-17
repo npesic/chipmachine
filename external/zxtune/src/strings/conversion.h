@@ -14,6 +14,7 @@
 #include "string_view.h"
 
 #include <charconv>
+#include <cstdint>  // std::intmax_t / std::uintmax_t (not pulled in transitively on GCC 16)
 #include <type_traits>
 
 namespace Strings

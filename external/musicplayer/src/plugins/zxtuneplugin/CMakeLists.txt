@@ -54,6 +54,15 @@ if(WIN32)
     add_definitions(-DSOURCES_ROOT="${ZXTUNE_ROOT}")
 endif()
 
+# GCC 14+/16 ship a more modular libstdc++ that no longer pulls <cstdint> in
+# transitively via other standard headers. Many zxtune C++ sources use
+# fixed-width / max int types (uint16_t, std::uintmax_t, ...) without including
+# it, so they fail on the MSYS2 GCC 16 toolchain (and would on Ubuntu 24.04 GCC
+# 14). Force-include <cstdint> across the whole zxtune C++ subtree to clear that
+# class in one place. CMAKE_CXX_FLAGS is C++-only, so the vendored C here
+# (z80ex, lzma) is untouched; the include is idempotent where already present.
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include cstdint")
+
 if(NOT MSVC)
     add_compile_options(-w)        # the vendored engine is third-party; keep it quiet
 endif()
