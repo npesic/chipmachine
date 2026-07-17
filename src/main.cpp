@@ -22,10 +22,11 @@ void initYoutube(sol::state&);
 
 #include <psf/PSFFile.h>
 
-#ifndef _WIN32
-#    include <bbsutils/console.h>
-#    define ENABLE_CONSOLE
-#endif
+// The console/text-mode UI is available on every platform. On Windows it is
+// backed by a Win32 console implementation in bbsutils (VT output + console
+// input); previously this was POSIX-only.
+#include <bbsutils/console.h>
+#define ENABLE_CONSOLE
 #include "CLI11.hpp"
 
 #include "di.hpp"
@@ -46,13 +47,16 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci);
 
 int main(int argc, char* argv[])
 {
+#ifndef _WIN32
     // Ignore SIGPIPE process-wide. We pipe audio through ffmpeg subprocesses
     // (FFMPEGPlayer); when a stream is torn down on a song switch, the feeder
     // thread can write to ffmpeg's stdin just as ffmpeg exits, and a write to a
     // pipe with no reader raises SIGPIPE -- whose default action silently kills
     // the whole app (no crash report). Ignoring it makes that write return EPIPE
     // instead, which feedLoop() already handles by stopping.
+    // (Windows has no SIGPIPE; broken-pipe writes fail with an error code.)
     std::signal(SIGPIPE, SIG_IGN);
+#endif
 
     Environment::setAppName("chipmachine");
 
@@ -356,7 +360,9 @@ int main(int argc, char* argv[])
         static auto chip_interface =
             injector.create<std::unique_ptr<chipmachine::ChipInterface>>();
         if (options.text_mode) {
-#ifndef _WIN32
+            // Text mode now runs on every platform, including Windows (MinGW),
+            // through the Win32 console backend in bbsutils. (This previously had
+            // a Windows-only stub that printed "not supported" and exited.)
             logging::setLevel(logging::Error);
             auto console = std::shared_ptr<bbs::Console>(
                 bbs::Console::createLocalConsole());
@@ -366,10 +372,6 @@ int main(int argc, char* argv[])
                                       std::ref(*chip_interface));
             else
                 chipmachine::runConsole(console, *chip_interface);
-#else
-            puts("Textmode not supported on Windows");
-            exit(0);
-#endif
         }
         if (options.telnet_server) {
             auto telnet = std::make_shared<bbs::TelnetServer>(options.port);

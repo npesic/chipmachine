@@ -184,7 +184,11 @@ endif()
 # group until no new symbols resolve. Done by overriding the executable link
 # rule (rather than per-target link flags) so it also brackets libraries pulled
 # in transitively, e.g. the zxtune sub-libs behind zxtuneplugin. Non-Apple only.
-if(NOT APPLE AND NOT WIN32)
+#
+# Applies to any GNU-ld target: Linux (GCC/Clang) and Windows via MinGW-w64.
+# Excludes Apple (ld64 rescans on its own) and MSVC (link.exe has no
+# --start-group and does not need it).
+if(NOT APPLE AND (NOT WIN32 OR MINGW))
     set(CMAKE_CXX_LINK_EXECUTABLE
         "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> -Wl,--start-group <LINK_LIBRARIES> -Wl,--end-group")
 endif()
@@ -297,22 +301,29 @@ target_link_libraries(chipmachine PRIVATE
 )
 target_compile_definitions(chipmachine PRIVATE -DAPP_NAME=chipmachine)
 
-if(NOT WIN32)
-    add_executable(cm ${MAIN_FILES} src/textmode.cpp src/main.cpp)
-    target_compile_definitions(cm PUBLIC TEXTMODE_ONLY)
-    target_link_libraries(cm PRIVATE
-        musicplayer
-        ${CORE_MODULES}
-        ${MUSICPLAYER_PLUGINS}
-        lhasa
-        vicepluginbridge
-        sol
-        ${APPLE_FRAMEWORKS}
-        avcodec
-        avformat
-        avutil
-        swresample
-        )
+# The text-mode player. Built on every platform, including Windows (MinGW) --
+# it was previously excluded there; the Windows text-mode path in main.cpp and a
+# Win32 console backend (bbsutils) are what make it usable.
+add_executable(cm ${MAIN_FILES} src/textmode.cpp src/main.cpp)
+target_compile_definitions(cm PUBLIC TEXTMODE_ONLY)
+target_link_libraries(cm PRIVATE
+    musicplayer
+    ${CORE_MODULES}
+    ${MUSICPLAYER_PLUGINS}
+    lhasa
+    vicepluginbridge
+    sol
+    ${APPLE_FRAMEWORKS}
+    avcodec
+    avformat
+    avutil
+    swresample
+    )
+if(WIN32)
+    # cm is a console app: override the global -mwindows (GUI subsystem, which
+    # gives the process NO console) that the grappix GUI target wants. A later
+    # -mconsole on the link line wins, so cm gets a normal console.
+    target_link_options(cm PRIVATE -mconsole)
 endif()
 
 add_executable(mksonglist scripts/mksonglist/mksonglist.cpp src/SongFileIdentifier.cpp)
