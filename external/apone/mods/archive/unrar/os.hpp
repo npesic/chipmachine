@@ -27,8 +27,13 @@
   #define STRICT
   #undef WINVER
   #undef _WIN32_WINNT
-  #define WINVER 0x0400
-  #define _WIN32_WINNT 0x0300
+  // Original values (WINVER 0x0400 / _WIN32_WINNT 0x0300, i.e. NT 4 / NT 3.x)
+  // predate FindFirstFileEx's FINDEX_INFO_LEVELS / FINDEX_SEARCH_OPS types, which
+  // modern MinGW-w64 headers declare only for _WIN32_WINNT >= 0x0400 while
+  // <fileapi.h> uses them unconditionally -> "FINDEX_INFO_LEVELS has not been
+  // declared". Target a modern baseline (Windows 7).
+  #define WINVER 0x0601
+  #define _WIN32_WINNT 0x0601
 
 
 #define WIN32_LEAN_AND_MEAN
