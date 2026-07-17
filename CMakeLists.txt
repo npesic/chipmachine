@@ -115,6 +115,18 @@ if(NOT WINDOWS)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration -Wno-implicit-int")
     endif()
 
+    # GCC 14+/16 ship a more modular libstdc++ that no longer pulls <cstdint> in
+    # transitively via other standard headers. Many headers across the tree use
+    # fixed-width int types (int16_t, uint32_t, std::uintmax_t, ...) without
+    # including it and fail on GCC 16 (MSYS2) -- and would on Ubuntu 24.04 (GCC
+    # 14). Force-include <cstdint> for every C++ TU to clear that whole class at
+    # once. C++ only (CMAKE_CXX_FLAGS), so the vendored C is untouched; idempotent
+    # where already included; harmless on the older-GCC builds. GCC only, so the
+    # macOS AppleClang/libc++ build is left exactly as-is.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include cstdint")
+    endif()
+
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O2")
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} -O2")
 
