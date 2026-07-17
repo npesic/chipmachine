@@ -44,7 +44,14 @@
 #ifndef _WIN_CE
   #include <shellapi.h>
 
+  // This forward declaration was a workaround for old Windows SDKs whose
+  // <shlobj.h> referenced SOLE_AUTHENTICATION_SERVICE before it was defined.
+  // Modern MinGW-w64 defines it (as a typedef of tagSOLE_AUTHENTICATION_SERVICE
+  // via objidlbase.h, pulled in by shlobj.h below), and this bare `struct`
+  // forward declaration conflicts with that typedef. Skip it on MinGW.
+  #ifndef __MINGW32__
   struct SOLE_AUTHENTICATION_SERVICE;
+  #endif
 
   #include <shlobj.h>
   #include <winioctl.h>

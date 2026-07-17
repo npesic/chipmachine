@@ -36,7 +36,15 @@ namespace utils {
 
 using namespace std;
 
+// On Windows the value is supplied by the in-class initializer in file.h
+// (PATH_SEPARATOR = ';'); provide the out-of-line definition WITHOUT an
+// initializer there to avoid "duplicate initialization". Elsewhere the header
+// only declares it, so the definition carries the value (':').
+#ifdef _WIN32
+const char File::PATH_SEPARATOR;
+#else
 const char File::PATH_SEPARATOR = ':';
+#endif
 
 const File File::NO_FILE;
 
