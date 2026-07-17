@@ -105,6 +105,16 @@ if(NOT WINDOWS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -funsigned-char")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -funsigned-char")
 
+    # Much of the vendored C (emulator plugins) uses incompatible-pointer-type,
+    # int/pointer-conversion, implicit-int and implicit-function-declaration
+    # constructs. These were warnings through GCC 13 but are ERRORS by default in
+    # GCC 14+. The MSYS2/MinGW toolchain here is GCC 16 (and Ubuntu 24.04 ships
+    # GCC 14), so demote them back to warnings to keep that tree building as it
+    # did on the GCC 11/12 Linux/RPi builds. C only -- C++ rejects these anyway.
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration -Wno-implicit-int")
+    endif()
+
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O2")
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} -O2")
 
