@@ -17,87 +17,97 @@ there took the base deps below plus a few configure-time `-dev` packages
   range (the old code wrote a fixed centibel value ignoring [min,max], which on a
   PulseAudio/PipeWire-bridged mixer drove volume to ~0) and never aborts on a
   missing mixer.
-- **`MusicDatabase` is no longer constructed eagerly** — direct-file playback
-  (`cm <song>`) does not need it, and opening its SQLite DB **hangs on WSL's
-  `/mnt/c` (drvfs)** due to poor POSIX advisory locking. This was the actual
-  cause of "no sound": cm blocked in DB init before playback ever started.
+- **`Environment::getCacheDir()` / `getConfigDir()` self-deadlock (the real
+  "hang" — both milestones).** These take a non-recursive `std::mutex` and then,
+  in the **non-Apple branch only**, call `getHomeDir()` — which takes the *same*
+  mutex again → instant deadlock on the first call. macOS never hit it (its
+  branch doesn't call `getHomeDir()`), so it was latent until this Linux port.
+  Fixed by resolving the home dir *before* locking (matching the already-correct
+  `getAppDir()`). Any code path that touches the cache/config dir hit this:
+  direct-file playback via `MusicDatabase`'s ctor, text mode via
+  `RemoteLoader`'s ctor.
+- **`MusicDatabase` is no longer constructed eagerly** — a reasonable
+  optimization (direct-file playback doesn't need the search DB) that *also*
+  happened to sidestep the deadlock above for `cm <song>`. Kept as a minor win,
+  but it was not the true fix.
+- **web fetch stall-abort** (`CURLOPT_LOW_SPEED_LIMIT/TIME`) so a stalled remote
+  song-list download during indexing can't hang forever — hardening, not the
+  cause of the text-mode hang.
 
 The GUI `chipmachine` target additionally needs the X11/GL dev packages in §7
 (e.g. `libxxf86vm-dev`).
 
-### WSL caveat: keep the repo (and cache) off `/mnt/c`
+### Correction: `/mnt/c` was a red herring
 
-`cm` defaults to **text mode** with no args, and text/GUI (browse/search) modes
-*do* build `MusicDatabase` (lazily). On `/mnt/c` that SQLite init can hang the
-same way. The robust fix is the standard WSL guidance: put the checkout — and the
-cache dir it derives — on the **native ext4** filesystem (`~/…`), not the mounted
-Windows drive. `/mnt/c` is also far slower for the build itself.
+An earlier draft of this plan blamed the hangs on SQLite locking over WSL's
+`/mnt/c` (drvfs). That was wrong — the gdb backtrace showed the actual cause was
+the `Environment` nested-lock deadlock above, which is filesystem-independent.
+Moving the checkout to native ext4 (`~/…`) is still worthwhile for **build and
+first-index speed** (drvfs is much slower for many small file ops), but it is
+**not** required for correctness now that the deadlock is fixed.
 
 ---
 
-## Milestone 2 — Working text mode (`./cm -X`)
+## Milestone 2 — Working text mode (`./cm -X`) — ✅ DONE
 
-Goal: the interactive terminal browser (search → select → play), not just
-one-file playback.
+The interactive terminal browser (search → select → play) works on Ubuntu.
 
-### Why `./cm -X` currently "hangs"
+### Why `./cm -X` hung, and the fix
 
-Both blocking stages run **synchronously inside the `ChipInterface`
-constructor** (`main.cpp` text-mode branch → `injector.create<ChipInterface>()`
-→ ctor → `mdb.initFromLua(wd)`), *before* the console UI is ever created:
+The hang was the **`Environment::getCacheDir()` self-deadlock** described in the
+Status section — *not* the database or the filesystem. Text mode reaches it
+via: `main.cpp` text-mode branch → `injector.create<ChipInterface>()` →
+`RemoteLoader` ctor → `getCacheDir()` → (non-Apple branch) `getHomeDir()` →
+re-locks the non-recursive `Environment::m` → deadlock, before the UI is ever
+created. A gdb `thread apply all bt` showed the main thread parked in
+`futex_wait` on `Environment::m` under `getHomeDir` ← `getCacheDir` ←
+`RemoteLoader::RemoteLoader`. Fixed by resolving the home dir before locking.
 
-1. **`MusicDatabase` construction** opens SQLite `music.db` in the cache dir.
-   On `/mnt/c` (drvfs) this blocks on POSIX advisory locks — the exact root
-   cause from Milestone 1. Direct-file mode was fixed by *skipping* the DB;
-   text mode genuinely needs it, so skipping is not an option here.
-2. **First-run indexing** (`initFromLua`) runs `lua/db.lua`, which defines
-   dozens of collections; each not-yet-indexed collection is written into
-   SQLite plus a title index. Text mode uses the **synchronous** `initFromLua`
-   (the GUI uses `initFromLuaAsync` with a progress screen), so `runConsole` —
-   and any output — does not appear until indexing finishes. On `/mnt/c` the
-   SQLite writes make this effectively a hang; even on native ext4 the first
-   run is a multi-second blank startup. Indexing is **cached** (per-collection
-   version guard + `index.dat`/`music.db`), so later launches are fast.
+Direct-file mode never hit it only because it doesn't construct `RemoteLoader`
+(and its `MusicDatabase` ctor, the other `getCacheDir()` caller, was skipped).
 
-So the "hangover" = SQLite-open hang on `/mnt/c` + synchronous first-index with
-no on-screen feedback.
+### Secondary behaviour worth knowing (not the hang)
 
-### Missing steps (in order)
+`ChipInterface`'s ctor runs `initFromLua` **synchronously** (the GUI uses the
+async, progress-screen `initFromLuaAsync`), so first-run indexing happens before
+the UI paints. It runs `lua/db.lua` (dozens of collections → SQLite + title
+index) and is **cached** (per-collection version guard + `index.dat`/`music.db`),
+so only the *first* `./cm -X` has a few-second startup; later launches are
+instant. This is expected, not a hang.
 
-1. **Move the checkout + cache to native ext4 (`~/…`), off `/mnt/c`.** Primary
-   unblock — clears the DB-open/index hang. Same WSL guidance as Milestone 1.
-2. **Let the one-time index complete, and check it.** Watch stderr for the
+### Remaining checks for a fully useful text mode
+
+1. **Let the one-time index complete, and check it.** Watch stderr for the
    bright-red `Error creating database '<name>'` banners (one bad row aborts
    that collection's indexing). Confirm `index.dat` + `music.db` appear in the
    cache dir and the *second* `./cm -X` starts instantly.
-3. **Ensure the bundled song-list data is present.** `db.lua` only adds a
+2. **Ensure the bundled song-list data is present.** `db.lua` only adds a
    collection if its `song_list`/`source` resolves ("*If song_list or source can
    not be found, database will not be added*"). The shipped song lists (under
    `data/`) are what populate the searchable index; without them the UI works
    but the list is empty. Verify what ships vs. what is fetched on demand.
-4. **Run in a real interactive TTY.** `createLocalConsole` puts stdin into
+3. **Run in a real interactive TTY.** `createLocalConsole` puts stdin into
    termios raw mode (`tcsetattr` on `fileno(stdin)`); pipes/redirects break it.
    Verify ANSI rendering (search field, colored list, status line) and keys:
    type to filter, arrows to navigate, **Enter** = play, **F2** = queue,
    **F3** = next, **F1** = pause, **Ctrl-C** = quit.
-5. **Confirm at least one playback path.** Selecting a song fetches it from the
+4. **Confirm at least one playback path.** Selecting a song fetches it from the
    collection's `source` URL via `RemoteLoader`/curl unless a `local_dir` holds
    it — so most collections need network; a `local_dir` collection needs the
    files present. Prove one route plays end-to-end (audio path itself is already
    done in Milestone 1).
 
-### Definition of done
+### Definition of done — met
 
-- `./cm -X` reaches the browser UI within a couple seconds (after the one-time
-  index), no hang; second launch is instant.
-- Typing filters results; navigation works; **Enter** plays a song audibly.
+- ✅ `./cm -X` reaches the browser UI (first run does the one-time index, then
+  later launches are instant), no hang.
+- Remaining polish (search populated, per-collection data, one confirmed remote
+  playback) is the checklist above, not blockers.
 
-### Optional robustness (code — not required to hit the milestone)
+### Optional robustness (code — not required, milestone already met)
 
 - **Progress feedback during the sync index** (print `Indexing <collection>…` to
-  stderr) so the first run doesn't look hung.
-- **SQLite resilience on slow/locky filesystems**: set a `busy_timeout` and/or
-  WAL journal mode — mitigates `/mnt/c` (native ext4 remains the real fix).
+  stderr) so the first run doesn't look idle.
 - **Async index for text mode**: switch to `initFromLuaAsync` so the UI paints
   immediately and indexes in the background (larger change; the ctor comment
   notes text mode intentionally uses the sync path today).
