@@ -131,7 +131,19 @@ add_subdirectory(external/lua ${_vendored_system})
 add_subdirectory(external/sol2 ${_vendored_system})
 
 set(CORE_MODULES coreutils audioplayer archive webutils sqlite3 xml bbsutils crypto)
-set(GUI_MODULES grappix fft)
+
+# The grappix OpenGL GUI and the FFT spectrum module are only used by the
+# `chipmachine` GUI executable. The text-mode player (`cm`) never links them, yet
+# configuring them pulls in GUI-only, configure-time dependencies (GLEW, GLFW,
+# FreeType, FFTW). Set -DCM_GUI=OFF to drop the whole GUI stack -- useful for a
+# text-only build such as the Windows text-mode milestone (and for `cm` on any
+# platform, so it needs no OpenGL deps).
+option(CM_GUI "Build the grappix OpenGL GUI ('chipmachine' target)" ON)
+if(CM_GUI)
+    set(GUI_MODULES grappix fft)
+else()
+    set(GUI_MODULES)
+endif()
 set(APONE_MODULES ${GUI_MODULES} ${CORE_MODULES})
 
 add_subdirectory(${AP1_ROOT}/mods ap1mods)
@@ -210,22 +222,22 @@ if(APPLE)
     )
 endif()
 
-# Platform-specific native glue.
-#   - CheckForUpdate: InitializeUpdateVerificationSubsystem() (called from main.cpp)
-#   - NativeDialogs:  ChipMachine::open_file_dialog() (called from GUI commands)
-# The macOS implementations are Objective-C (AppKit/Foundation); every other
-# platform (Linux/Raspberry Pi, etc.) compiles C++ stubs that provide the same
-# symbols so the shared source tree links everywhere.
+# Platform-specific native glue. Split by which targets actually need it:
+#   - CheckForUpdate (PLATFORM_GLUE_FILES): InitializeUpdateVerificationSubsystem()
+#     is called unconditionally from main.cpp, so ALL targets (incl. text-mode cm)
+#     need it -> goes in MAIN_FILES.
+#   - NativeDialogs (GUI_PLATFORM_GLUE_FILES): ChipMachine::open_file_dialog() is
+#     called only from the GUI (ChipMachine_commands.cpp). Its stub #includes
+#     ChipMachine.h, which drags in grappix (and thus GL/GLEW headers), so keeping
+#     it out of cm lets the text-mode build compile with NO OpenGL dependency.
+# The macOS implementations are Objective-C (AppKit/Foundation); other platforms
+# compile C++ stubs providing the same symbols.
 if(APPLE)
-    set(PLATFORM_GLUE_FILES
-        src/CheckForUpdate.mm
-        src/NativeDialogs.mm
-    )
+    set(PLATFORM_GLUE_FILES     src/CheckForUpdate.mm)
+    set(GUI_PLATFORM_GLUE_FILES src/NativeDialogs.mm)
 else()
-    set(PLATFORM_GLUE_FILES
-        src/CheckForUpdate_stub.cpp
-        src/NativeDialogs_stub.cpp
-    )
+    set(PLATFORM_GLUE_FILES     src/CheckForUpdate_stub.cpp)
+    set(GUI_PLATFORM_GLUE_FILES src/NativeDialogs_stub.cpp)
 endif()
 
 # Source file layout declarations
@@ -252,6 +264,7 @@ set(GUI_FILES
     src/ChipMachine_commands.cpp
     src/textmode.cpp
     demofx/Transitions.cpp
+    ${GUI_PLATFORM_GLUE_FILES}
 )
 
 set(SOURCE_FILES ${SOURCE_FILES} src/version.h src/TextField.h src/TextListView.h src/CueSheet.h
@@ -271,6 +284,9 @@ add_custom_target(chipmachine.script_files SOURCES ${SCRIPT_FILES})
 # Targets Execution definitions (Direct file-level dependency tracking)
 # ---------------------------------------------------------------------------
 
+# The grappix OpenGL GUI executable. Built only when CM_GUI is ON (the default);
+# a text-only build (-DCM_GUI=OFF) skips it and its GUI dependencies entirely.
+if(CM_GUI)
 if(APPLE)
     add_executable(chipmachine MACOSX_BUNDLE ${MAIN_FILES} ${GUI_FILES} src/main.cpp)
 
@@ -300,6 +316,7 @@ target_link_libraries(chipmachine PRIVATE
     swresample
 )
 target_compile_definitions(chipmachine PRIVATE -DAPP_NAME=chipmachine)
+endif() # CM_GUI
 
 # The text-mode player. Built on every platform, including Windows (MinGW) --
 # it was previously excluded there; the Windows text-mode path in main.cpp and a
