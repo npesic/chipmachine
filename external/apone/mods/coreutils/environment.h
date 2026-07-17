@@ -77,13 +77,19 @@ public:
      * Win   : same as exeDir                     — unchanged */
     static utils::path const& getCacheDir()
     {
+#ifndef __APPLE__
+        // Resolve home FIRST: getHomeDir() locks `m` itself, so calling it while
+        // already holding `m` (as the old code did, inside the lock below) would
+        // re-lock the non-recursive mutex and self-deadlock. Only the non-Apple
+        // branch calls getHomeDir(), which is why this never surfaced on macOS.
+        const auto& homeDir = getHomeDir();
+#endif
         std::lock_guard<std::mutex> lock(m);
         if (cacheDir.empty()) {
 #ifdef __APPLE__
             // Call isolated Apple implementation
             cacheDir = utils::path(detail::getMacCacheDir()) / appName;
 #else
-            const auto& homeDir = getHomeDir();
             cacheDir = homeDir / ".cache" / appName;
 #endif
             if (!utils::exists(cacheDir)) utils::makedirs(cacheDir);
@@ -97,13 +103,17 @@ public:
      * Win   : same as exeDir                          — unchanged */
     static utils::path const& getConfigDir()
     {
+#ifndef __APPLE__
+        // See getCacheDir(): resolve home before locking to avoid re-locking the
+        // non-recursive `m` (getHomeDir() locks it) and self-deadlocking.
+        const auto& homeDir = getHomeDir();
+#endif
         std::lock_guard<std::mutex> lock(m);
         if (configDir.empty()) {
 #ifdef __APPLE__
             // Call isolated Apple implementation
             configDir = utils::path(detail::getMacConfigDir()) / appName;
 #else
-            const auto& homeDir = getHomeDir();
             configDir = homeDir / ".config" / appName;
 #endif
             if (!utils::exists(configDir)) utils::makedirs(configDir);
