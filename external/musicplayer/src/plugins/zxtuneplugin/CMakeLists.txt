@@ -42,6 +42,18 @@ include_directories(
     ${ZLIB_INCLUDE_DIRS})
 add_definitions(-DHAVE_BOOST -DNO_DEBUG_LOGS)
 
+# zxtune's source_location.h strips a SOURCES_ROOT prefix from __FILE__ at
+# compile time (for debug tags). When SOURCES_ROOT is undefined it uses an empty
+# root and then static_asserts that __FILE__ starts with '/', which holds for
+# Unix absolute paths but NOT for Windows drive-letter paths ("C:/..."). Define
+# it to the zxtune root so the prefix is stripped and the char after it is '/'.
+# Windows-only: Linux/macOS keep the working empty-root behavior. (Matches how
+# zxtune's own apps/foo_input_zxtune passes it; the value must be a quoted string
+# because source_location.h token-pastes it into a string_view literal.)
+if(WIN32)
+    add_definitions(-DSOURCES_ROOT="${ZXTUNE_ROOT}")
+endif()
+
 if(NOT MSVC)
     add_compile_options(-w)        # the vendored engine is third-party; keep it quiet
 endif()
