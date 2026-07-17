@@ -13,6 +13,8 @@
 #include "string_type.h"
 #include "string_view.h"
 
+#include <cstdint>  // uint16_t (GCC 16 libstdc++ no longer pulls it in via <string_view>)
+
 namespace Strings
 {
   String ToAutoUtf8(StringView str);
