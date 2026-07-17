@@ -64,11 +64,17 @@ scriptDir = os.path.dirname(os.path.abspath(__file__))
 #               Raspberry Pi OS) from another host via the rpi5-aarch64 toolchain
 #               file. Point it at a copy of the Pi's root filesystem by setting
 #               the RPI_SYSROOT env var (or -DRPI_SYSROOT=... in CMake).
-#   windows/android : reserved (not wired yet).
+#   windows   : cross-compile for Windows x86-64 with MinGW-w64 (GCC) from a
+#               Linux host via the mingw-w64-x86_64 toolchain file. Supply MinGW
+#               builds of the deps and point at them with the MINGW_SYSROOT env
+#               var (or -DMINGW_SYSROOT=...). NOTE: to build *on* Windows with
+#               MSYS2, use `--target native` in the MINGW64 shell instead.
+#   android   : reserved (not wired yet).
 targets = { 'native'    : [],
             'raspberry' : ['-DCMAKE_TOOLCHAIN_FILE=' +
                            os.path.join(scriptDir, 'rpi5-aarch64.cmake')],
-            'windows'   : [],
+            'windows'   : ['-DCMAKE_TOOLCHAIN_FILE=' +
+                           os.path.join(scriptDir, 'mingw-w64-x86_64.cmake')],
             'android'   : [],
           }
 

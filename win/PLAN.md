@@ -166,7 +166,7 @@ browser UI renders through the new console backend, Enter plays.
 | Option | Verdict |
 | --- | --- |
 | **MSYS2 + MinGW-w64 (native)** | **Recommended.** GCC/binutils + every dep prebuilt via `pacman`. Runs/debugs on target. |
-| **MinGW-w64 cross from Linux** (`x86_64-w64-mingw32`, wire `build.py --target windows` to a toolchain file like `rpi5-aarch64.cmake`) | Viable and reuses our cross infra, but the **Windows dependency set is the hard part** (would need MXE or hand-built curl/sqlite/boost/ffmpeg/… for mingw). Consider once native works. |
+| **MinGW-w64 cross from Linux** (`x86_64-w64-mingw32`) — ✅ **wired**: `build.py --target windows` → `mingw-w64-x86_64.cmake`, output in `builds/windows-<config>`. | Viable and reuses our cross infra, but the **Windows dependency set is the hard part** (need MXE or hand-built curl/sqlite/boost/ffmpeg/… for mingw; point at them with `MINGW_SYSROOT`). Static libgcc/libstdc++/pthread are already set in the toolchain so `cm.exe` is self-contained. Consider once native works. |
 | **MSVC / clang-cl** | **Not recommended.** The `ld -r`/`objcopy` plugin combining, GNU inline asm, `__attribute__`, `--start-group`, and visibility model are GNU-specific; this is a rewrite, not a port. |
 | **WSL** | Not a Windows port — that's the Ubuntu build we already have. |
 
