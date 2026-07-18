@@ -995,17 +995,6 @@ static int sound_run_sound(void)
     SWORD *bufferptr;
     static int overflow_warning_count = 0;
 
-    /* Entry probe: is this reached at all? */
-    {
-        static int _dbg_entry = 0;
-        if (!_dbg_entry) {
-            _dbg_entry = 1;
-            fprintf(stderr, "[sound_run_sound] ENTERED (playback_enabled=%d, "
-                            "sdev_open=%d)\n", playback_enabled, sdev_open);
-            fflush(stderr);
-        }
-    }
-
     /* XXX: implement the exact ... */
     if (!playback_enabled || (suspend_time > 0 && disabletime)) {
         /* Report once: this silent early return is what starves psid_play(). */
@@ -1128,21 +1117,6 @@ double sound_flush()
     char *state;
     static time_t prev;
     time_t now;
-
-    /* Entry probe: sound_flush() is the only path that actually hands samples
-       to the sink (dummy_write -> psid_sound_buf). It is driven by
-       vsync_do_vsync(), which the VICII raster alarm calls. If this never
-       prints, the raster/vsync chain is not reaching us and no amount of
-       sound-side fixing will help. */
-    {
-        static int _dbg_entry = 0;
-        if (!_dbg_entry) {
-            _dbg_entry = 1;
-            fprintf(stderr, "[sound_flush] ENTERED (playback_enabled=%d, "
-                            "sdev_open=%d)\n", playback_enabled, sdev_open);
-            fflush(stderr);
-        }
-    }
 
     if (!playback_enabled) {
         static int _dbg_pe = 0;

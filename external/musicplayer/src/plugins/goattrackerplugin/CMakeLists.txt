@@ -35,6 +35,25 @@ add_library(goattrackerplugin_objs OBJECT
 
 target_include_directories(goattrackerplugin_objs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(goattrackerplugin_objs PRIVATE coreutils)
+
+# GoatTracker's two no-op stubs `sound_flush()`/`sound_suspend()` (gt2_load.c)
+# have external linkage and collide by name with vicepluginbridge's REAL
+# VICE functions of the same names -- with different signatures, at that
+# (`void sound_flush(void)` vs VICE's `double sound_flush()`).
+#
+# The hidden-visibility + `ld -r` localization below hides them on ELF, but that
+# is a no-op on Windows COFF, where the final link uses
+# --allow-multiple-definition and silently binds ALL callers to whichever
+# definition comes first. When GoatTracker's empty stub won, VICE's
+# vsync_do_vsync() "flushed" nothing, so no SID samples ever reached the sink and
+# psid_play() spun forever: SID playback was silent and hung the audio thread.
+#
+# Rename them out of the shared namespace so correctness no longer depends on
+# the ELF-only localization. Both tokens appear solely as this function's
+# declaration/definition/calls within GoatTracker, so a plain -D rename is safe.
+target_compile_definitions(goattrackerplugin_objs PRIVATE
+    sound_flush=gt_sound_flush
+    sound_suspend=gt_sound_suspend)
 target_compile_options(goattrackerplugin_objs PRIVATE
     -fvisibility=hidden -fvisibility-inlines-hidden)
 
