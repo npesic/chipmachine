@@ -676,6 +676,8 @@ static int sid_open(void)
 
     for (c = 0; c < snddata.sound_chip_channels; c++) {
         if (!(snddata.psid[c] = sound_machine_open(c))) {
+            fprintf(stderr, "[sound_open] FAILED: sound_machine_open(chip %d)\n", c);
+            fflush(stderr);
             return sound_error(translate_text(IDGS_CANNOT_OPEN_SID_ENGINE));
         }
     }
@@ -699,6 +701,11 @@ static int sid_init(void)
 
     for (c = 0; c < snddata.sound_chip_channels; c++) {
         if (!sound_machine_init(snddata.psid[c], speed, cycles_per_sec)) {
+            fprintf(stderr,
+                    "[sound_open] FAILED: sound_machine_init(chip %d, speed=%d, "
+                    "cycles_per_sec=%u) -- snddata.clkstep stays 0\n",
+                    c, speed, cycles_per_sec);
+            fflush(stderr);
             return sound_error(translate_text(IDGS_CANNOT_INIT_SID_ENGINE));
         }
     }
@@ -747,6 +754,10 @@ int sound_open(void)
     double bufsize;
 
     if (suspend_time > 0 && disabletime) {
+        fprintf(stderr, "[sound_open] FAILED: sound previously disabled by an "
+                        "error (suspend_time=%d, disabletime=%d)\n",
+                suspend_time, (int)disabletime);
+        fflush(stderr);
         return 1;
     }
 
@@ -828,6 +839,8 @@ int sound_open(void)
         if (pdev->init) {
             channels_cap = channels;
             if (pdev->init(playparam, &speed, &fragsize, &fragnr, &channels_cap)) {
+                fprintf(stderr, "[sound_open] FAILED: device `%s' init\n", pdev->name);
+                fflush(stderr);
                 err = lib_msprintf(translate_text(IDGS_INIT_FAILED_FOR_DEVICE_S), pdev->name);
                 sound_error(err);
                 lib_free(err);
@@ -879,6 +892,9 @@ int sound_open(void)
             }
         }
     } else {
+        fprintf(stderr, "[sound_open] FAILED: playback device `%s' not found\n",
+                playname ? playname : "(default/first)");
+        fflush(stderr);
         err = lib_msprintf(translate_text(IDGS_DEVICE_S_NOT_FOUND_SUPPORT), playname);
         sound_error(err);
         lib_free(err);

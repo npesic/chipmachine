@@ -92,28 +92,40 @@ static int resid_init(sound_t *psid, int speed, int cycles_per_sec)
     double passband, gain;
     int filters_enabled, model, sampling, passband_percentage, gain_percentage, filter_bias_mV;
 
+    /* Every `return 0` below reports "init failed" to sid_init(), which makes
+       sound_open() bail before it ever sets snddata.clkstep. With clkstep 0 the
+       sound engine produces no samples at all and psid_play() spins. That failure
+       is otherwise silent (VICE's log_* output is suppressed in this headless
+       build), so name the culprit on stderr. */
+#define RESID_INIT_FAIL(what)                                                  \
+    do {                                                                       \
+        fprintf(stderr, "[resid_init] FAILED: %s\n", (what));                  \
+        fflush(stderr);                                                        \
+        return 0;                                                              \
+    } while (0)
+
     if (resources_get_int("SidFilters", &filters_enabled) < 0) {
-        return 0;
+        RESID_INIT_FAIL("resources_get_int(SidFilters)");
     }
 
     if (resources_get_int("SidModel", &model) < 0) {
-        return 0;
+        RESID_INIT_FAIL("resources_get_int(SidModel)");
     }
 
     if (resources_get_int("SidResidSampling", &sampling) < 0) {
-        return 0;
+        RESID_INIT_FAIL("resources_get_int(SidResidSampling)");
     }
 
     if (resources_get_int("SidResidPassband", &passband_percentage) < 0) {
-        return 0;
+        RESID_INIT_FAIL("resources_get_int(SidResidPassband)");
     }
 
     if (resources_get_int("SidResidGain", &gain_percentage) < 0) {
-        return 0;
+        RESID_INIT_FAIL("resources_get_int(SidResidGain)");
     }
-    
+
     if (resources_get_int("SidResidFilterBias", &filter_bias_mV) < 0) {
-        return 0;
+        RESID_INIT_FAIL("resources_get_int(SidResidFilterBias)");
     }
 
     passband = speed * passband_percentage / 200.0;
@@ -180,8 +192,18 @@ static int resid_init(sound_t *psid, int speed, int cycles_per_sec)
                                             speed, passband, gain)) {
         log_warning(LOG_DEFAULT,
                     "reSID: Out of spec, increase sampling rate or decrease maximum speed");
+        /* Most likely cause of this is cycles_per_sec == 0, i.e. sound_init()
+           was handed an unpopulated machine_timing. Print the inputs so it is
+           obvious which one is bad. */
+        fprintf(stderr,
+                "[resid_init] FAILED: set_sampling_parameters("
+                "cycles_per_sec=%d, method=%d, speed=%d, passband=%f, gain=%f)\n",
+                cycles_per_sec, (int)method, speed, passband, gain);
+        fflush(stderr);
         return 0;
     }
+
+#undef RESID_INIT_FAIL
 
     log_message(LOG_DEFAULT, "reSID: %s, filter %s, sampling rate %dHz - %s",
                 model_text,
