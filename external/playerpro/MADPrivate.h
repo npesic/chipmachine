@@ -127,7 +127,10 @@ __private_extern MADErr initESD(MADDriverRec *inMADDriver);
 __private_extern MADErr closeESD(MADDriverRec *inMADDriver);
 #endif
 
-#ifdef WIN32
+// Native-Windows PlayerPRO audio (DirectSound / Win95). Not used by the portable
+// plugin build (PPRO_PORTABLE_PLUG uses the host's audio), and these declarations
+// reference the Mac 'Boolean' type which isn't defined in a portable MinGW build.
+#if defined(WIN32) && !defined(PPRO_PORTABLE_PLUG)
 __private_extern Boolean	DirectSoundInit(MADDriverRec* driver);
 __private_extern void	DirectSoundClose(MADDriverRec* driver);
 __private_extern Boolean	W95_Init(MADDriverRec* driver);

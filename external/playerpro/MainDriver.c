@@ -2666,7 +2666,9 @@ MADErr MADMusicSaveCString(MADMusic *music, const char *cName, bool compressMAD)
 					MADBE16(&shortPtr[ll]);
 				}
 #else
-				short *shortPtr = (short*)dataCopy;
+				// shortPtr is already declared above (block scope); the __BLOCKS__
+				// branch and this one share it. Re-declaring it here is a
+				// redefinition when this branch is compiled (non-Apple, no GCD).
 				for (ll = 0; ll < inOutCount / 2; ll++) {
 					MADBE16(&shortPtr[ll]);
 				}
