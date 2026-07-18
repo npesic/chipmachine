@@ -338,6 +338,18 @@ int vsync_do_vsync(struct video_canvas_s *c, int been_skipped)
     signed long delay;
     long frame_ticks_remainder, frame_ticks_integer, compval;
 
+    /* Entry probe: this is the only caller of sound_flush(), and it is driven
+       by the VICII raster alarm. If this never prints, the raster geometry
+       never satisfies the vsync trigger and no samples can ever be flushed. */
+    {
+        static int _dbg_entry = 0;
+        if (!_dbg_entry) {
+            _dbg_entry = 1;
+            fprintf(stderr, "[vsync_do_vsync] ENTERED\n");
+            fflush(stderr);
+        }
+    }
+
 #if (defined(HAVE_OPENGL_SYNC)) && !defined(USE_SDLUI)
     float refresh_cmp;
     int refresh_div;

@@ -49,6 +49,20 @@ static int dummy_init(const char *param, int *speed, int *fragsize, int *fragnr,
 
 static int dummy_write(SWORD *pbuf, size_t nr)
 {
+    /* Entry probe: the final link -- this is what actually fills
+       psid_sound_buf. If this prints but psid_play still produces 0 samples,
+       the problem is here; if it never prints, the chain broke upstream. */
+    {
+        static int _dbg_entry = 0;
+        if (!_dbg_entry) {
+            _dbg_entry = 1;
+            fprintf(stderr, "[dummy_write] ENTERED (nr=%d, channels=%d, "
+                            "psid_sound_max=%d)\n",
+                    (int)nr, channels, psid_sound_max);
+            fflush(stderr);
+        }
+    }
+
     /* Move data left over from previous overflow to start of new buffer. */
     int overflow_idx = 0;
     while (overflow_idx != overflow_max &&
