@@ -19,7 +19,9 @@ namespace di = boost::di;
 #include <musicplayer/src/plugins/ptkplugin/PTKPlugin.h>
 #include <musicplayer/src/plugins/openmptplugin/OpenMPTPlugin.h>
 #include <musicplayer/src/plugins/quartetplugin/QuartetPlugin.h>
+#ifndef NO_DMFPLUGIN
 #include <musicplayer/src/plugins/dmfplugin/DMFPlugin.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -926,6 +928,7 @@ TEST_CASE("VGMStream host path plays sound", "[music]")
 // ch3), Sega Master System (SN76489 PSG) and Game Boy. Each must load through
 // DivEngine and produce non-silent audio. This also guards that the DefleMask
 // files reach dmfplugin and not OpenMPT's unrelated X-Tracker .dmf loader.
+#ifndef NO_DMFPLUGIN
 TEST_CASE("DMF", "[music]") { testPlugin<musix::DMFPlugin>("testmus/dmf", "nowork"); }
 
 // Regression: chipmachine loads songs on a MusicPlayerList worker thread whose
@@ -971,6 +974,7 @@ TEST_CASE("DMF loads on a small-stack worker thread", "[music]")
     pthread_join(th, nullptr);
     REQUIRE(probe.ok);
 }
+#endif // NO_DMFPLUGIN
 
 // Regression test for SGC (Sega Master System / Game Gear / ColecoVision)
 // support. The vendored Game_Music_Emu had the SGC emulator stripped out (the
@@ -1402,9 +1406,13 @@ TEST_CASE("Coconizer", "[music]") { testPlugin<musix::CocoPlugin>("testmus/coco"
 TEST_CASE("MaxTrax", "[music]") { testPlugin<musix::MaxTraxPlugin>("testmus/maxtrax", ""); }
 TEST_CASE("STarKos", "[music]") { testPlugin<musix::SksPlugin>("testmus/sks", ""); }
 TEST_CASE("NerdTracker2", "[music]") { testPlugin<musix::NEDPlugin>("testmus/ned", ""); }
+#ifndef NO_PLAYERPROPLUGIN
 TEST_CASE("PlayerPRO", "[music]") { testPlugin<musix::PlayerProPlugin>("testmus/playerpro", ""); }
+#endif // NO_PLAYERPROPLUGIN
 TEST_CASE("JayTrax", "[music]") { testPlugin<musix::JxsPlugin>("testmus/jxs", ""); }
+#ifndef NO_IXSPLUGIN
 TEST_CASE("IXS", "[music]") { testPlugin<musix::IXSPlugin>("testmus/ixs", ""); }
+#endif // NO_IXSPLUGIN
 TEST_CASE("FamiTracker", "[music]") { testPlugin<musix::FamiTrackerPlugin>("testmus/famitracker", ""); }
 
 // .ftm is two unrelated formats: NES FamiTracker (magic "FamiTracker Module")
@@ -1429,6 +1437,7 @@ TEST_CASE("FamiTracker vs FaceTheMusic routing", "[music]")
 // Mad Tracker 2 loader ("MAD+"), which used to claim these files and fail to
 // load them; AdPlug now content-declines them so they route here. This guards
 // both the engine slice and the AdPlug/PlayerPRO routing split.
+#ifndef NO_PLAYERPROPLUGIN
 TEST_CASE("PlayerPRO routing", "[music]")
 {
     logging::setLevel(logging::Level::Warning);
@@ -1463,6 +1472,7 @@ TEST_CASE("PlayerPRO routing", "[music]")
     double rms = nSamp ? std::sqrt(sumSq / nSamp) : 0.0;
     REQUIRE(rms < 9000.0); // correct ~3000-4000; the unsigned-char bug pushes it >13000
 }
+#endif // NO_PLAYERPROPLUGIN
 
 // MaxTrax (.mxtx, the Amiga sound engine behind Cyberdreams' Dark Seed et al).
 // Played by a vendored port of ScummVM's MaxTrax sequencer + Paula mixer; UADE
@@ -2049,6 +2059,7 @@ TEST_CASE("SoundSmith format resolves to w", "[music]")
 // Win32 player). Routing is by the "IXS!" magic. This fails if the magic check
 // regresses, the zlib-dependent wavetable build breaks, or the pull-style render
 // API (genAudio/getAudioBuffer) produces silence.
+#ifndef NO_IXSPLUGIN
 TEST_CASE("IXS plays sound", "[music]")
 {
     logging::setLevel(logging::Level::Warning);
@@ -2073,6 +2084,7 @@ TEST_CASE("IXS plays sound", "[music]")
 
     REQUIRE(energy != 0);
 }
+#endif // NO_IXSPLUGIN
 
 // Regression test for OctaMED MMD3 routing. libopenmpt's MED loader decodes the
 // whole MMD0..MMD3 family by content, but Tables.cpp only advertises the "med"
@@ -3148,7 +3160,9 @@ TEST_CASE("SAP type routing", "[music]")
 TEST_CASE("Monotone", "[music]") { testPlugin<musix::MonotonePlugin>("testmus/monotone", ""); }
 // MikMod UNITRK / UNIMOD (.uni, magic "UN0x"). Played via the vendored libmikmod
 // slice -- no other engine in the tree has a UNIMOD loader.
+#ifndef NO_MIKMODPLUGIN
 TEST_CASE("MikMod", "[music]") { testPlugin<musix::MikModPlugin>("testmus/mikmod", ""); }
+#endif // NO_MIKMODPLUGIN
 // Beepola .bbsong (ZX Spectrum beeper). Only the Phaser1 engine (P1D/P1S) is
 // decoded today; the other Beepola engines in this dir fast-fail as a graceful
 // skip ("unsupported"), so coverage exercises the 18 Phaser1 tunes.
@@ -3393,12 +3407,15 @@ TEST_CASE("FMP", "[music]") { testPlugin<musix::FMPPlugin>("testmus/fmp", ""); }
 // Euphony (.eup, FM Towns / PC-98) via the vendored eupmini replayer. The .eup
 // references companion instrument banks (.fmb/.pmb) by name in its header; those
 // siblings live in the same dir and are skipped by canHandle (eup-only).
+#ifndef NO_EUPPLUGIN
 TEST_CASE("EUP", "[music]") { testPlugin<musix::EUPPlugin>("testmus/eup", ""); }
+#endif // NO_EUPPLUGIN
 // Euphony plays sound, with companion banks. STARSKY.eup references the FM bank
 // "fmp" (fmp.fmb) and PCM bank "a_string" (a_string.pmb) by name in its header;
 // the plugin must locate those siblings in the song's directory and render
 // non-zero audio. Fails if header parsing, the .fmb/.pmb loader, or the ring
 // drain in getSamples regresses.
+#ifndef NO_EUPPLUGIN
 TEST_CASE("EUP plays sound", "[music]")
 {
     logging::setLevel(logging::Level::Warning);
@@ -3423,6 +3440,7 @@ TEST_CASE("EUP plays sound", "[music]")
 
     REQUIRE(energy != 0);
 }
+#endif // NO_EUPPLUGIN
 
 // MGSDRV (.mgs, MSX) via the vendored libkss replayer. The MGSDRV Z80 driver is
 // embedded in libkss (modules/drivers/mgsdrv.h), so a plain .mgs needs no runtime
@@ -3630,8 +3648,11 @@ static void writeWSRFile(const fs::path& p, const std::vector<uint8_t>& data)
     }
 }
 
+#ifndef NO_WSRPLUGIN
 TEST_CASE("WSR", "[music]") { testPlugin<musix::WSRPlugin>("testmus/wsr", ".md"); }
+#endif // NO_WSRPLUGIN
 
+#ifndef NO_WSRPLUGIN
 TEST_CASE("WSR plays", "[music]")
 {
     logging::setLevel(logging::Level::Warning);
@@ -3669,6 +3690,7 @@ TEST_CASE("WSR plays", "[music]")
     fs::remove(nofooter);
     fs::remove(wrongext);
 }
+#endif // NO_WSRPLUGIN
 
 // WSR plays real sound. These are genuine WonderSwan rips from the Modland
 // collection (testmus/wsr). Each must be detected by canHandle and render
@@ -3677,6 +3699,7 @@ TEST_CASE("WSR plays", "[music]")
 // drop them to silence or fail to load. "kaze no klonoa" also exercises a
 // non-trivial start subsong (its WSRF footer's first-song index is 26, above
 // the default browse window, so it checks the start-song handling too).
+#ifndef NO_WSRPLUGIN
 TEST_CASE("WSR plays sound", "[music]")
 {
     logging::setLevel(logging::Level::Warning);
@@ -3707,6 +3730,7 @@ TEST_CASE("WSR plays sound", "[music]")
         REQUIRE(energy != 0);
     }
 }
+#endif // NO_WSRPLUGIN
 
 // OPNA hardware-rhythm drums. The OPNA rhythm sample ROM is embedded
 // (opna_rhythm_rom.cpp) and loaded by OPNA::Init via LoadEmbeddedRhythm(), so

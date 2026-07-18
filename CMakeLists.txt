@@ -443,6 +443,13 @@ target_link_libraries(cmtest PRIVATE
 target_include_directories(cmtest PRIVATE ${APONE}/mods
     ${MUSICPLAYER}/src/plugins/s98plugin/m_s98/device/fmgen)
 target_compile_definitions(cmtest PRIVATE -DTESTING)
+if(WIN32)
+    # Same reason as `cm`: override the global -mwindows (GUI subsystem, which
+    # gives the process NO console) that the grappix GUI target wants. Without
+    # this the Catch2 runner's stdout/stderr go nowhere and the test results are
+    # invisible. A later -mconsole on the link line wins.
+    target_link_options(cmtest PRIVATE -mconsole)
+endif()
 
 # The SunVox engine is a prebuilt shared library that the plugin dlopen()s at
 # runtime from next to the executable. Copy it beside each binary that can play
