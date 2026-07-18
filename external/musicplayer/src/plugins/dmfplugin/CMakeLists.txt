@@ -382,9 +382,22 @@ else()
         -DOBJ=${DMF_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
+# The Furnace slice is ~300 objects. Expanding all their absolute paths onto a
+# single `ld -r` command line exceeds Windows' ~32 KB command-line limit (which
+# CreateProcess reports as "The system cannot execute the specified program").
+# GNU ld accepts an @response-file with one path per line; use it on Windows.
+# Linux/macOS keep the direct expansion (multi-MB command lines are fine there).
+if(WIN32)
+    set(_DMF_RSP ${CMAKE_CURRENT_BINARY_DIR}/dmfplugin_objs.rsp)
+    file(GENERATE OUTPUT ${_DMF_RSP}
+        CONTENT "$<JOIN:$<TARGET_OBJECTS:dmfplugin_objs>,\n>")
+    set(_DMF_LD_CMD COMMAND ld -r @${_DMF_RSP} -o ${DMF_COMBINED})
+else()
+    set(_DMF_LD_CMD COMMAND ld -r $<TARGET_OBJECTS:dmfplugin_objs> -o ${DMF_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${DMF_COMBINED}
-    COMMAND ld -r $<TARGET_OBJECTS:dmfplugin_objs> -o ${DMF_COMBINED}
+    ${_DMF_LD_CMD}
     ${_LOCALIZE_HIDDEN}
     DEPENDS dmfplugin_objs $<TARGET_OBJECTS:dmfplugin_objs>
     COMMAND_EXPAND_LISTS
