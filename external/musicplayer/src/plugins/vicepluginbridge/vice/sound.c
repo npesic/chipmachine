@@ -608,6 +608,13 @@ static void enablesound(void)
 /* close sid device and show error dialog */
 static int sound_error(const char *msg)
 {
+    /* Any call here permanently clears playback_enabled (below), after which
+       sound_run_sound() silently returns early forever and psid_play() can
+       never fill its buffer. Make that visible -- it is otherwise invisible in
+       this headless build, where log_message() goes nowhere. */
+    fprintf(stderr, "[sound_error] %s (sound now DISABLED)\n", msg ? msg : "(null)");
+    fflush(stderr);
+
     sound_close();
 
     if (console_mode || video_disabled_mode) {
@@ -990,6 +997,16 @@ static int sound_run_sound(void)
 
     /* XXX: implement the exact ... */
     if (!playback_enabled || (suspend_time > 0 && disabletime)) {
+        /* Report once: this silent early return is what starves psid_play(). */
+        static int reported = 0;
+        if (!reported) {
+            reported = 1;
+            fprintf(stderr,
+                    "[sound_run_sound] returning early: playback_enabled=%d "
+                    "suspend_time=%d disabletime=%d -- no samples will be produced\n",
+                    playback_enabled, suspend_time, (int)disabletime);
+            fflush(stderr);
+        }
         return 1;
     }
 
