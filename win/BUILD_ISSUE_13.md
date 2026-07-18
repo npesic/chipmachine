@@ -1,0 +1,12 @@
+[168/314] Localizing nedplugin symbols (ld -r)
+FAILED: [code=1] plugins/nedplugin/nedplugin_combined.o C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/nedplugin_combined.o
+C:\WINDOWS\system32\cmd.exe /C "cd /D C:\msys64\home\lab\git\chipmachine\builds\release\plugins\nedplugin && ld -r C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./NEDPlugin.cpp.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/ned_engine.c.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/apuwrap.c.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/file.c.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/blarggAPU.cpp.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/Nes_Snd_Emu-0.1.7/Simple_Apu_PAL.cpp.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/Nes_Snd_Emu-0.1.7/nes_apu/Nes_Apu.cpp.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/Nes_Snd_Emu-0.1.7/nes_apu/Nes_Oscs.cpp.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/Nes_Snd_Emu-0.1.7/nes_apu/Blip_Buffer.cpp.obj C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/CMakeFiles/nedplugin_objs.dir/./ned/Nes_Snd_Emu-0.1.7/nes_apu/apu_snapshot.cpp.obj -o C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/nedplugin_combined.o && C:\msys64\mingw64\bin\cmake.exe -DOBJ=C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/nedplugin_combined.o -DOBJCOPY=C:/msys64/mingw64/bin/objcopy.exe -DREADELF=C:/msys64/mingw64/bin/readelf.exe -P C:/msys64/home/lab/git/chipmachine/external/musicplayer/src/plugins/nedplugin/../localize_strong_hidden.cmake"
+readelf: Error: Not an ELF file - it has the wrong magic bytes at the start
+CMake Error at C:/msys64/home/lab/git/chipmachine/external/musicplayer/src/plugins/localize_strong_hidden.cmake:21 (message):
+  readelf failed on
+  C:/msys64/home/lab/git/chipmachine/builds/release/plugins/nedplugin/nedplugin_combined.o
+  (rc=1)
+
+
+[181/314] Building CXX object plugins/sksplugin/CMakeFiles/sksplugin.dir/__/__/__/__/arkostracker3/JUCE/modules/juce_core/juce_core.cpp.obj
+ninja: build stopped: subcommand failed.

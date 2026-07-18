@@ -197,6 +197,15 @@ include_directories(${ZXTUNE_ROOT}/3rdparty/lhasa/lib/public)
 
 if(WIN32)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -mwindows")
+    # The combined plugins (ned/fami/dmf/goattracker/... ) bundle their own copies
+    # of shared emulator cores (Blip_Buffer, emu2413, reSID, ...). On ELF these
+    # are made file-local via objcopy (see localize_strong_hidden.cmake), but that
+    # relies on ELF symbol visibility, which does not exist on Windows COFF -- so
+    # the duplicate cores stay global and collide at final link. Tell ld to take
+    # the first definition instead of erroring. NOTE: this means the affected
+    # plugins share one copy of each duplicated core on Windows; proper COFF-side
+    # localization is a follow-up.
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
 endif()
 
 if(SAN)

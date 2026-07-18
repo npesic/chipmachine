@@ -13,6 +13,18 @@
 #   (OBJCOPY/READELF come from ${CMAKE_OBJCOPY}/${CMAKE_READELF}, so this is
 #    correct for the cross toolchain too.)
 
+# This whole scheme is ELF-specific (symbol visibility + readelf/objcopy on ELF).
+# On Windows the combined object is COFF/PE: readelf can't read it, and there is
+# no ELF-style hidden visibility to localize (-fvisibility=hidden is a no-op on
+# COFF). Detect a non-ELF object by its magic bytes (ELF = 0x7F 'E' 'L' 'F') and
+# skip; the final link handles the resulting duplicate vendored cores with
+# --allow-multiple-definition instead. This also covers cross-compiling to
+# Windows from a Linux host.
+file(READ "${OBJ}" _magic LIMIT 4 HEX)
+if(NOT _magic STREQUAL "7f454c46")
+    return()
+endif()
+
 execute_process(
     COMMAND ${READELF} -sW ${OBJ}
     OUTPUT_VARIABLE _out
