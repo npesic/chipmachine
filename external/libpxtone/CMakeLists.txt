@@ -6,7 +6,10 @@ include(CheckCCompilerFlag)
 include(TestBigEndian)
 
 set(CMAKE_C_STANDARD 90)
-set(CMAKE_CXX_STANDARD 98)
+# Bumped from 98 -> 11: the parent project force-includes <cstdint> (GCC 14+ no
+# longer pulls it in transitively), and <cstdint> requires C++11. C++11 is a
+# superset of the C++98 this code was written for, so it still builds.
+set(CMAKE_CXX_STANDARD 11)
 
 if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -45,7 +48,7 @@ function(set_legacy_standard destTarget)
         # Turn on warnings and legacy C/C++ standards to support more compilers
         target_compile_options(${destTarget} PRIVATE
             $<$<COMPILE_LANGUAGE:C>:-Wall -pedantic -std=c90 -Wno-long-long>
-            $<$<COMPILE_LANGUAGE:CXX>:-Wall -pedantic -std=gnu++98>
+            $<$<COMPILE_LANGUAGE:CXX>:-Wall -pedantic -std=gnu++11>
         )
     endif()
 endfunction()
