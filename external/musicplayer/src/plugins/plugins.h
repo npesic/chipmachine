@@ -28,9 +28,13 @@
 #include "ptkplugin/PTKPlugin.h"
 #include "orgplugin/OrgPlugin.h"
 #include "sunvoxplugin/SunVoxPlugin.h"
+#ifndef NO_EUPPLUGIN
 #include "eupplugin/EUPPlugin.h"
+#endif
 #include "kssplugin/KSSPlugin.h"
+#ifndef NO_WSRPLUGIN
 #include "wsrplugin/WSRPlugin.h"
+#endif
 #include "zxtuneplugin/ZXTunePlugin.h"
 #include "pokeynoiseplugin/PokeyNoisePlugin.h"
 #include "bbsongplugin/BBSongPlugin.h"
@@ -50,8 +54,12 @@
 #include "copplugin/CopPlugin.h"
 #include "jxsplugin/JxsPlugin.h"
 #include "monotoneplugin/MonotonePlugin.h"
+#ifndef NO_PLAYERPROPLUGIN
 #include "playerproplugin/PlayerProPlugin.h"
+#endif
+#ifndef NO_MIKMODPLUGIN
 #include "mikmodplugin/MikModPlugin.h"
+#endif
 #include "famitrackerplugin/FamiTrackerPlugin.h"
 #include "goattrackerplugin/GoatTrackerPlugin.h"
 #include "vgmstreamplugin/VGMStreamPlugin.h"

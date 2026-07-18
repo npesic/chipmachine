@@ -31,10 +31,14 @@ extern "C" {
     void ptkplugin_register();
     void orgplugin_register();     // Organya / Cave Story (.org)
     void sunvoxplugin_register();  // SunVox modular synth (.sunvox)
+#ifndef NO_EUPPLUGIN
     void eupplugin_register();     // Euphony / FM Towns & PC-98 (.eup)
+#endif
     void kssplugin_register();     // MGSDRV / MSX (.mgs) via libkss
     void quartetplugin_register(); // Microdeal Quartet / Atari ST (.4v, .4q)
+#ifndef NO_WSRPLUGIN
     void wsrplugin_register();     // Bandai WonderSwan (.wsr) via in_wsr
+#endif
     void zxtuneplugin_register();  // ZX Spectrum Sound Tracker 1.1 (.st11) via ZXTune
     void pokeynoiseplugin_register(); // Atari 800 PokeyNoise (.pn) via ASAP (6502+POKEY)
     void bbsongplugin_register();  // Beepola .bbsong (ZX Spectrum beeper) via Z80 + speaker sampling
@@ -52,13 +56,19 @@ extern "C" {
     void nedplugin_register();     // NerdTracker II / NES (.ned) via blargg Nes_Snd_Emu
     void sccmusixxplugin_register(); // SCC-Musixx / MSX Konami SCC (.SNG) via Z80 + emu2212
     void copplugin_register();     // Sam Coupe COP / SAA1099 (.cop) via GME Z80 + SAASound
+#ifndef NO_PLAYERPROPLUGIN
     void playerproplugin_register(); // PlayerPRO / Macintosh tracker (.mad MADG/MADF/MADK) via vendored MADDriver
+#endif
     void jxsplugin_register();     // JayTrax / cross-platform synth tracker (.jxs) via Rhino's replayer (C port)
     void monotoneplugin_register(); // MONOTONE / PC-speaker tracker (.mon) via vendored PTPlayer (BSD-3)
+#ifndef NO_MIKMODPLUGIN
     void mikmodplugin_register();  // MikMod UNITRK / UNIMOD (.uni) via vendored libmikmod slice
+#endif
     void famitrackerplugin_register(); // FamiTracker (.ftm) NES 2A03 + expansions via vendored FamiTracker CX
     void goattrackerplugin_register(); // GoatTracker (.sng) C64 SID via vendored GoatTracker player + reSID
+#ifndef NO_DMFPLUGIN
     void dmfplugin_register();         // DefleMask (.dmf) multi-system chiptune via vendored Furnace engine
+#endif
     void vgmstreamplugin_register();   // vgmstream (.adx/.hca/.fsb/... hundreds of game-audio containers) via vendored vgmstream
 }
 
@@ -93,10 +103,14 @@ void register_plugins() {
     ptkplugin_register();
     orgplugin_register();
     sunvoxplugin_register();
+#ifndef NO_EUPPLUGIN
     eupplugin_register();
+#endif
     kssplugin_register();
     quartetplugin_register();
+#ifndef NO_WSRPLUGIN
     wsrplugin_register();
+#endif
     zxtuneplugin_register();
     pokeynoiseplugin_register();
     bbsongplugin_register();
@@ -114,12 +128,18 @@ void register_plugins() {
     nedplugin_register();
     sccmusixxplugin_register();
     copplugin_register();
+#ifndef NO_PLAYERPROPLUGIN
     playerproplugin_register();
+#endif
     jxsplugin_register();
     monotoneplugin_register();
+#ifndef NO_MIKMODPLUGIN
     mikmodplugin_register();
+#endif
     famitrackerplugin_register();
     goattrackerplugin_register();
+#ifndef NO_DMFPLUGIN
     dmfplugin_register();
+#endif
     vgmstreamplugin_register();
 }

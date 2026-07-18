@@ -191,11 +191,25 @@ set(MUSICPLAYER_PLUGINS
 # -DNO_<PLUGIN> define (see the plugin_register target below). Everything else --
 # the ~350 other formats -- still builds and plays. To re-enable one, remove it
 # from this list and port its sources.
-#   * ixsplugin  -- webixs (RE'd Ixalance .ixs). Its FileMap uses the Windows name
-#                   `HANDLE` as a Unix fd, which collides irreconcilably with
-#                   windows.h's `void* HANDLE`.
+#   * ixsplugin       -- webixs (RE'd Ixalance .ixs). Its FileMap uses the Windows
+#                        name `HANDLE` as a Unix fd, colliding irreconcilably with
+#                        windows.h's `void* HANDLE`.
+#   * eupplugin       -- eupmini (.eup) calls SDL_Delay for timing; no SDL here.
+#   * wsrplugin       -- in_wsr (.wsr) headers declare their API __declspec(dllimport)
+#                        but it links statically -> unresolved __imp_* symbols.
+#   * playerproplugin -- PlayerPRO (.mad), Mac-first; same dllimport-vs-static
+#                        __imp_MAD* mismatch.
+#   * mikmodplugin    -- libmikmod (.uni): MIKMODAPI = __declspec(dllimport) (__imp_*)
+#                        plus POSIX random(); .uni is covered well enough by openmpt.
+#   * dmfplugin       -- Furnace (DefleMask .dmf): the ~300-object combined image
+#                        overflows COFF REL32 relocations ("relocation truncated to
+#                        fit") and misses Furnace's Windows getWinConfigPath().
+# The two most worth re-enabling later are dmfplugin (popular format; needs
+# -Wa,-mbig-obj on the Furnace slice + the Windows config-path source) and
+# mikmodplugin (needs a static-link MIKMODAPI macro + a random() shim).
 if(WIN32)
-    set(WIN32_DISABLED_PLUGINS ixsplugin)
+    set(WIN32_DISABLED_PLUGINS
+        ixsplugin eupplugin wsrplugin playerproplugin mikmodplugin dmfplugin)
     foreach(_p ${WIN32_DISABLED_PLUGINS})
         list(REMOVE_ITEM MUSICPLAYER_PLUGINS ${_p})
         string(TOUPPER ${_p} _p_uc)
