@@ -184,6 +184,28 @@ set(MUSICPLAYER_PLUGINS
     playerproplugin jxsplugin monotoneplugin mikmodplugin ixsplugin copplugin
     famitrackerplugin goattrackerplugin dmfplugin libvgmplugin vgmstreamplugin
 )
+
+# Plugins that do not (yet) build on Windows/MinGW: niche, reverse-engineered, or
+# Mac/Unix-only sources whose fixes would cascade far past their value. They are
+# dropped from the build here AND guarded out of plugin_register.cpp via a
+# -DNO_<PLUGIN> define (see the plugin_register target below). Everything else --
+# the ~350 other formats -- still builds and plays. To re-enable one, remove it
+# from this list and port its sources.
+#   * ixsplugin  -- webixs (RE'd Ixalance .ixs). Its FileMap uses the Windows name
+#                   `HANDLE` as a Unix fd, which collides irreconcilably with
+#                   windows.h's `void* HANDLE`.
+if(WIN32)
+    set(WIN32_DISABLED_PLUGINS ixsplugin)
+    foreach(_p ${WIN32_DISABLED_PLUGINS})
+        list(REMOVE_ITEM MUSICPLAYER_PLUGINS ${_p})
+        string(TOUPPER ${_p} _p_uc)
+        # Global so every TU that pulls the bulk plugins.h header (main.cpp,
+        # MusicPlayer.cpp, plugin_register.cpp) skips the disabled plugin's
+        # header and its register() call.
+        add_compile_definitions("NO_${_p_uc}")
+    endforeach()
+endif()
+
 add_subdirectory(${MUSICPLAYER}/src/plugins plugins)
 add_subdirectory(${MUSICPLAYER}/src/psf psf)
 

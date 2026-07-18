@@ -35,7 +35,9 @@
 #include "pokeynoiseplugin/PokeyNoisePlugin.h"
 #include "bbsongplugin/BBSongPlugin.h"
 #include "soundsmithplugin/SoundSmithPlugin.h"
+#ifndef NO_IXSPLUGIN
 #include "ixsplugin/IXSPlugin.h"
+#endif
 #include "musxplugin/MusxPlugin.h"
 #include "cocoplugin/CocoPlugin.h"
 #include "mgtplugin/MgtPlugin.h"
