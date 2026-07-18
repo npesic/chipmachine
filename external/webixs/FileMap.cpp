@@ -33,7 +33,9 @@ static int ixs_open(const char *path, int flags, int mode) {
 #define S_IWUSR _S_IWRITE
 #define S_IRGRP 0
 #define S_IROTH 0
-typedef int mode_t;
+#ifndef __MINGW32__
+typedef int mode_t;  // MSVC lacks mode_t; MinGW-w64 already defines it
+#endif
 #else
 #include <sys/mman.h>
 #include <unistd.h>

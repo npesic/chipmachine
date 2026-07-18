@@ -20,7 +20,12 @@ typedef unsigned char       byte;
 typedef unsigned short      ushort;
 typedef unsigned int        uint;
 
-#if defined(EMSCRIPTEN) || defined(LINUX)
+// On a MinGW Windows build LINUX is still defined (it selects webixs's pull-style
+// render API), but the *types* here must be the Windows ones: HANDLE has to match
+// windows.h's `void*`, and __cdecl/__fastcall must NOT be #defined away (that
+// breaks the Win32 headers). So take this generic/Unix types branch only when not
+// building for Windows.
+#if (defined(EMSCRIPTEN) || defined(LINUX)) && !defined(_WIN32)
 #define __fastcall
 #define __cdecl
 
