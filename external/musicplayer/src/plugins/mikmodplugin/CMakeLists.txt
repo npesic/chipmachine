@@ -71,9 +71,21 @@ else()
         -DOBJ=${MIKMOD_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
+# On Windows, expanding all object paths onto one `ld -r` command line can exceed
+# the ~32 KB CreateProcess limit ("The system cannot execute the specified
+# program"). Pass them via a GNU ld @response-file instead. Linux/macOS keep the
+# direct expansion.
+if(WIN32)
+    set(_MIKMOD_RSP ${CMAKE_CURRENT_BINARY_DIR}/mikmodplugin_objs.rsp)
+    file(GENERATE OUTPUT ${_MIKMOD_RSP}
+        CONTENT "$<JOIN:$<TARGET_OBJECTS:mikmodplugin_objs>,\n>")
+    set(_MIKMOD_LD_CMD COMMAND ld -r @${_MIKMOD_RSP} -o ${MIKMOD_COMBINED})
+else()
+    set(_MIKMOD_LD_CMD COMMAND ld -r $<TARGET_OBJECTS:mikmodplugin_objs> -o ${MIKMOD_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${MIKMOD_COMBINED}
-    COMMAND ld -r $<TARGET_OBJECTS:mikmodplugin_objs> -o ${MIKMOD_COMBINED}
+    ${_MIKMOD_LD_CMD}
     ${_LOCALIZE_HIDDEN}
     DEPENDS mikmodplugin_objs $<TARGET_OBJECTS:mikmodplugin_objs>
     COMMAND_EXPAND_LISTS

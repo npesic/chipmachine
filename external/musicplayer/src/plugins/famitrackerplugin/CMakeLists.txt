@@ -105,9 +105,21 @@ else()
         -DOBJ=${FAMI_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
+# On Windows, expanding all object paths onto one `ld -r` command line can exceed
+# the ~32 KB CreateProcess limit ("The system cannot execute the specified
+# program"). Pass them via a GNU ld @response-file instead. Linux/macOS keep the
+# direct expansion.
+if(WIN32)
+    set(_FAMI_RSP ${CMAKE_CURRENT_BINARY_DIR}/famitrackerplugin_objs.rsp)
+    file(GENERATE OUTPUT ${_FAMI_RSP}
+        CONTENT "$<JOIN:$<TARGET_OBJECTS:famitrackerplugin_objs>,\n>")
+    set(_FAMI_LD_CMD COMMAND ld -r @${_FAMI_RSP} -o ${FAMI_COMBINED})
+else()
+    set(_FAMI_LD_CMD COMMAND ld -r $<TARGET_OBJECTS:famitrackerplugin_objs> -o ${FAMI_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${FAMI_COMBINED}
-    COMMAND ld -r $<TARGET_OBJECTS:famitrackerplugin_objs> -o ${FAMI_COMBINED}
+    ${_FAMI_LD_CMD}
     ${_LOCALIZE_HIDDEN}
     DEPENDS famitrackerplugin_objs $<TARGET_OBJECTS:famitrackerplugin_objs>
     COMMAND_EXPAND_LISTS

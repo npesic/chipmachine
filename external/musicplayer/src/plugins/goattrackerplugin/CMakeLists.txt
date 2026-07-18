@@ -57,9 +57,21 @@ else()
         -DOBJ=${GT_COMBINED} -DOBJCOPY=${CMAKE_OBJCOPY} -DREADELF=${CMAKE_READELF}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/../localize_strong_hidden.cmake)
 endif()
+# On Windows, expanding all object paths onto one `ld -r` command line can exceed
+# the ~32 KB CreateProcess limit ("The system cannot execute the specified
+# program"). Pass them via a GNU ld @response-file instead. Linux/macOS keep the
+# direct expansion.
+if(WIN32)
+    set(_GT_RSP ${CMAKE_CURRENT_BINARY_DIR}/goattrackerplugin_objs.rsp)
+    file(GENERATE OUTPUT ${_GT_RSP}
+        CONTENT "$<JOIN:$<TARGET_OBJECTS:goattrackerplugin_objs>,\n>")
+    set(_GT_LD_CMD COMMAND ld -r @${_GT_RSP} -o ${GT_COMBINED})
+else()
+    set(_GT_LD_CMD COMMAND ld -r $<TARGET_OBJECTS:goattrackerplugin_objs> -o ${GT_COMBINED})
+endif()
 add_custom_command(
     OUTPUT ${GT_COMBINED}
-    COMMAND ld -r $<TARGET_OBJECTS:goattrackerplugin_objs> -o ${GT_COMBINED}
+    ${_GT_LD_CMD}
     ${_LOCALIZE_HIDDEN}
     DEPENDS goattrackerplugin_objs $<TARGET_OBJECTS:goattrackerplugin_objs>
     COMMAND_EXPAND_LISTS
