@@ -39,6 +39,20 @@ namespace di = boost::di;
 
 #include "version.h"
 
+#ifdef _WIN32
+// Windows/MinGW has no POSIX setenv; emulate it with _putenv_s. The PATH-list
+// separator is ';' on Windows (':' on POSIX).
+#    include <cstdlib>
+static int setenv(const char* name, const char* value, int overwrite)
+{
+    if (!overwrite && std::getenv(name)) return 0;
+    return _putenv_s(name, value);
+}
+static constexpr const char* PATH_LIST_SEP = ";";
+#else
+static constexpr const char* PATH_LIST_SEP = ":";
+#endif
+
 extern "C" void InitializeUpdateVerificationSubsystem();
 
 namespace chipmachine {
@@ -248,8 +262,8 @@ int main(int argc, char* argv[])
     utils::path exeYtdlpDir = exeDir / "ytdlp"; // bundle layout (Contents/MacOS/ytdlp)
     utils::path binYtdlpDir = binDir / "ytdlp"; // dev layout (chipmachine/bin/ytdlp)
     std::string newPath =
-        exeDir.string() + ":" + exeYtdlpDir.string() + ":" +
-        binDir.string() + ":" + binYtdlpDir.string() + ":" + currentPath;
+        exeDir.string() + PATH_LIST_SEP + exeYtdlpDir.string() + PATH_LIST_SEP +
+        binDir.string() + PATH_LIST_SEP + binYtdlpDir.string() + PATH_LIST_SEP + currentPath;
     setenv("PATH", newPath.c_str(), 1);
 
     utils::path certPath = (work_dir / "cert.pem");
