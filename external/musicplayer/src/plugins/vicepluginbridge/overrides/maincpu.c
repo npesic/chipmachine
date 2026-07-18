@@ -509,7 +509,41 @@ void psid_play(short *buf, int n)
     psid_sound_buf = buf;
     psid_sound_idx = 0;
     psid_sound_max = n;
+
+    /* Safety valve. This loop only ends when the VICE sound engine has pushed
+       exactly psid_sound_max samples into psid_sound_buf (see the "dummy" sound
+       device in overrides/sounddrv/sounddummy.c). If sound never opens -- e.g.
+       sound_open() failed, so snddata.clkstep stays 0 and no samples are ever
+       produced -- the CPU emulation below runs forever and takes the caller's
+       thread with it (the audio feed thread), freezing the player.
+
+       Bound the work at ~30x the opcodes a correct run needs (a C64 issues
+       roughly 22 cycles, i.e. a handful of opcodes, per sample), then give up:
+       pad the rest of the buffer with silence and return so the caller stays
+       responsive. Report once, including how far the sink actually got --
+       psid_sound_idx == 0 means "no samples ever produced" (sound engine never
+       opened) as opposed to "emulation too slow to keep up". */
+    unsigned long guard = 0;
+    const unsigned long guard_max = (unsigned long)n * 200UL + 2000000UL;
+
     while (psid_sound_idx != psid_sound_max) {
+        if (++guard > guard_max) {
+            static int reported = 0;
+            if (!reported) {
+                reported = 1;
+                fprintf(stderr,
+                        "[psid_play] aborting: produced %d of %d samples "
+                        "(sound engine %s). Tune will be silent.\n",
+                        psid_sound_idx, psid_sound_max,
+                        psid_sound_idx == 0 ? "never produced any samples"
+                                            : "too slow");
+                fflush(stderr);
+            }
+            while (psid_sound_idx < psid_sound_max) {
+                psid_sound_buf[psid_sound_idx++] = 0;
+            }
+            break;
+        }
 
 
 /* ------------------------------------------------------------------------ */
