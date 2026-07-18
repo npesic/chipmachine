@@ -128,6 +128,28 @@ target_include_directories(libvgmplugin_objs PRIVATE
 # libvgm feature probes. USE_ZLIB: FileLoader/MemoryLoader gzip path.
 target_compile_definitions(libvgmplugin_objs PRIVATE
     VGM_LITTLE_ENDIAN HAVE_STDINT_H HAVE_ZLIB_H USE_ZLIB)
+
+# libvgm's SCSP core (emu/cores/scsp.c + scspdsp.c) exports these with external
+# linkage, and aoplugin's vendored Sega Saturn SCSP core
+# (aosdk/eng_ssf/scsp.c + scspdsp.c) defines the same five names. Both are
+# compiled and linked.
+#
+# The hidden-visibility + `ld -r` localization below hides libvgm's copies on
+# ELF, but that is a no-op on Windows COFF, where the final link uses
+# --allow-multiple-definition and silently binds every caller to whichever
+# definition comes first -- so libvgm and aoplugin can end up sharing one SCSP
+# implementation (this is the same failure mode that made SID silent: see
+# goattrackerplugin's sound_flush/sound_suspend rename).
+#
+# Rename libvgm's out of the shared namespace so correctness does not depend on
+# the ELF-only localization. All occurrences are confined to scsp.c/scspdsp.c
+# /scspdsp.h, so a plain -D rename is safe.
+target_compile_definitions(libvgmplugin_objs PRIVATE
+    SCSPDSP_Init=lvgm_SCSPDSP_Init
+    SCSPDSP_SetSample=lvgm_SCSPDSP_SetSample
+    SCSPDSP_Start=lvgm_SCSPDSP_Start
+    SCSPDSP_Step=lvgm_SCSPDSP_Step
+    SCSP_UpdateSlot=lvgm_SCSP_UpdateSlot)
 target_compile_options(libvgmplugin_objs PRIVATE
     -fvisibility=hidden -fvisibility-inlines-hidden -w)
 set_target_properties(libvgmplugin_objs PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)

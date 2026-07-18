@@ -34,6 +34,23 @@ target_include_directories(vgmstreamplugin_objs PRIVATE
 # links.
 target_compile_definitions(vgmstreamplugin_objs PRIVATE VGM_USE_FFMPEG)
 
+# vgmstream's base/resampler.c exports `resampler_init` with external linkage,
+# and ndsplugin's vendored desmume resampler defines the same name with a
+# DIFFERENT signature (`void resampler_init(void)` vs vgmstream's
+# `void* resampler_init(resampler_cfg_t*)`). Both are compiled and linked.
+#
+# The hidden-visibility + `ld -r` localization below hides vgmstream's copy on
+# ELF, but that is a no-op on Windows COFF, where --allow-multiple-definition
+# makes the linker silently bind callers to whichever definition comes first --
+# calling through the wrong signature is undefined behaviour. (Same failure mode
+# as the goattracker sound_flush bug that made SID silent.)
+#
+# Rename vgmstream's out of the shared namespace. It occurs only as the
+# definition, its prototype in base/resampler.h, and one call in base/mixing.c,
+# so a plain -D rename is safe.
+target_compile_definitions(vgmstreamplugin_objs PRIVATE
+    resampler_init=vgmstream_resampler_init)
+
 # Apply signed char, warnings suppression, and hidden visibility to the vgmstream sources
 target_compile_options(vgmstreamplugin_objs PRIVATE
     -fvisibility=hidden -fvisibility-inlines-hidden -fsigned-char -w)
