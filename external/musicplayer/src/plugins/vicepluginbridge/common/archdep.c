@@ -81,7 +81,11 @@
 #ifdef _WIN32
 //#include <io.h>
 #include <dirent_win32.h>
+// Modern MinGW-w64 already defines mode_t (via <sys/types.h>, included above);
+// only the older/MSVC path needs this fallback typedef.
+#ifndef __MINGW32__
 typedef int mode_t;
+#endif
 #define R_OK 4
 #define W_OK 2
 #define F_OK 0
