@@ -105,14 +105,17 @@ if(NOT WINDOWS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -funsigned-char")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -funsigned-char")
 
-    # Much of the vendored C (emulator plugins) uses incompatible-pointer-type,
-    # int/pointer-conversion, implicit-int and implicit-function-declaration
-    # constructs. These were warnings through GCC 13 but are ERRORS by default in
-    # GCC 14+. The MSYS2/MinGW toolchain here is GCC 16 (and Ubuntu 24.04 ships
-    # GCC 14), so demote them back to warnings to keep that tree building as it
-    # did on the GCC 11/12 Linux/RPi builds. C only -- C++ rejects these anyway.
+    # The vendored C (emulator plugins) is old-style and trips two kinds of
+    # newer-GCC strictness that the GCC 11/12 Linux/RPi builds didn't hit:
+    #   * GCC 15+ default C to gnu23, where bool/true/false are keywords, so the
+    #     common `typedef ... bool;` becomes illegal -> pin the dialect to gnu17.
+    #   * GCC 14+ promoted incompatible-pointer-types / int/pointer-conversion /
+    #     implicit-int / implicit-function-declaration from warnings to ERRORS ->
+    #     demote them back to warnings.
+    # The MSYS2/MinGW toolchain here is GCC 16 (Ubuntu 24.04 is GCC 14). C only --
+    # C++ has its own standard (set per target) and rejects these regardless.
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration -Wno-implicit-int")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu17 -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration -Wno-implicit-int")
     endif()
 
     # GCC 14+/16 ship a more modular libstdc++ that no longer pulls <cstdint> in
