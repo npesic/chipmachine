@@ -461,7 +461,12 @@ typedef struct PlugInfo {
 } PlugInfo;
 #endif
 
-#ifdef WIN32
+// The portable-plugin block below (PPRO_PORTABLE_PLUG) also defines PlugInfo and
+// does not exclude WIN32, so on MinGW -- which defines WIN32 *and* is built with
+// -DPPRO_PORTABLE_PLUG -- both this native-Windows block and the portable one
+// would fire, redefining PlugInfo. The plugin build wants the portable version,
+// so yield this native-Windows block when building as a portable plugin.
+#if defined(WIN32) && !defined(PPRO_PORTABLE_PLUG)
 #include <windows.h>
 typedef MADErr (*PLUGDLLFUNC)(MADFourChar, char *, MADMusic *, MADInfoRec *, MADDriverSettings *);
 
