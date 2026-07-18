@@ -105,7 +105,8 @@ public:
                 fs::exists(shared) ? shared : player->loadDir / "set.smpl";
         } else if (!player->uadeFile.empty()) {
             fileName = player->loadDir /
-                       (player->baseName + "." + utils::path_prefix(fileName));
+                       (player->baseName + "." +
+                        utils::path_prefix(fileName.string()));
             LOGD("Translated back to '%s'", fileName.string().c_str());
         } else if (player->currentFileName.string().find(fileName.string()) ==
                    0) {

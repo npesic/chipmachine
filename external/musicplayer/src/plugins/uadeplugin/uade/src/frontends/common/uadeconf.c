@@ -425,7 +425,11 @@ char *uade_open_create_home(void)
 		struct stat st;
 		snprintf(name, sizeof name, "%s/.uade", home);
 		if (stat(name, &st) != 0)
+#ifdef _WIN32
+			mkdir(name);  // MinGW's mkdir takes only the path (no mode)
+#else
 			mkdir(name, S_IRUSR | S_IWUSR | S_IXUSR);
+#endif
 	}
 
 	return home;
