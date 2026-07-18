@@ -253,12 +253,21 @@ endif()
 # rule (rather than per-target link flags) so it also brackets libraries pulled
 # in transitively, e.g. the zxtune sub-libs behind zxtuneplugin. Non-Apple only.
 #
+# The group brackets <OBJECTS> AND <LINK_LIBRARIES>, not just the libraries: on
+# Windows/MinGW+Ninja, CMake bundles the link libraries into the *objects*
+# response file (emitted at the <OBJECTS> position) and leaves <LINK_LIBRARIES>
+# empty -- so wrapping only <LINK_LIBRARIES> produces an EMPTY group and the
+# plugin archives (plugin_register -> *_register) fail to resolve. `@rsp` is
+# expanded in place, so bracketing <OBJECTS> brackets whatever the rsp expands to
+# (objects + libs) on every generator. Grouping object files is harmless --
+# --start-group only affects how archives are rescanned.
+#
 # Applies to any GNU-ld target: Linux (GCC/Clang) and Windows via MinGW-w64.
 # Excludes Apple (ld64 rescans on its own) and MSVC (link.exe has no
 # --start-group and does not need it).
 if(NOT APPLE AND (NOT WIN32 OR MINGW))
     set(CMAKE_CXX_LINK_EXECUTABLE
-        "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> -Wl,--start-group <LINK_LIBRARIES> -Wl,--end-group")
+        "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> -Wl,--start-group <OBJECTS> <LINK_LIBRARIES> -Wl,--end-group -o <TARGET>")
 endif()
 
 add_library(musicplayer INTERFACE)
