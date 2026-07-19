@@ -533,7 +533,429 @@
 --     collection that already exists -- so editing `source` does nothing until
 --     the collection table is rebuilt. Hence the bump: it forces the reindex
 --     that repopulates the urls. Data-only change; no engine change.
-VERSION = 98;
+-- 99: rko (remix.kwed.org) and amigaremix now declare `ext = "mp3"`. Their paths
+--     carry no extension (rko: a bare remix id, all 5217 rows; amigaremix: 3 rows
+--     whose upstream url lost its ".mp3"), and neither list has an ext column, so
+--     internExt had nothing to intern: formatKey came out 0 and add_unique's
+--     "unknown format -> keep both" guard meant those rows could never fold
+--     against the same title+composer elsewhere -- the duplicate stayed visible in
+--     search. Engine change: parseStandard now honours a collection-level `ext` as
+--     the fallback when the template has no ext column, exactly as it already does
+--     for `format`/`composer`. Bump forces the reindex that repopulates song.ext.
+--     A survey of the other 40 collections found the remaining formatKey==0 rows
+--     are correct-as-is and deliberately left alone: pouet/manualpatch/radio
+--     (32538) are youtube + stream urls with no file to extension; modland (310,
+--     e.g. "SoundSmith/A.Fass/Coconut Champagne") and unexotica (6, filenames
+--     ending in a dot) are genuinely extensionless and span too many formats for
+--     any one default. None of them currently blocks a real fold.
+-- 100: VGMRips "Other" bucket split into real platforms, and a new
+--     "Nintendo Virtual Boy" platform on the TAB screen (9th under Nintendo).
+--     VGMRips files by chip family, not vendor, so 44 game rips carried the bare
+--     "Other" platform label and piled into the "Other Platforms" -> "Other"
+--     catch-all, even though each names its hardware in the filename's trailing
+--     parenthetical ("Bound High! (Nintendo Virtual Boy)"). build_vgmrips.py
+--     already had TAG_PLATFORM for exactly this refinement -- it was just missing
+--     the entries. Added: Nintendo Virtual Boy (17), Vectrex (15 -- these now
+--     join the existing Vectrex sub-group rather than sitting in the catch-all),
+--     Amstrad CPC + CPC+ (5), Atari 5200/400/800 -> Atari 8bit (3), Sega Game
+--     1000 -> Sega SG-1000 (2), Atari 7800 (1), Intellivision (1). The bare
+--     "Other" label is now unused by VGMRips.
+--     Virtual Boy is a new format byte (VIRTUALBOY): its VSU logs decode only on
+--     libvgm (vgm_opl_detect.h already routes chip 0xC4 there; testmus/libvgm/
+--     virtualboy-vsu.vgz covers it), and pouet's 2 "Youtube (Virtual Boy)"
+--     captures move off OTHER onto it too. Logo:
+--     data/misc/platformscreenshots/Nintendo Virtual Boy.png.
+--     Data-only reindex + one new platform byte; bump repopulates song.format.
+--     NOTE: the rebuild also drops 17 Mega Drive rips that Zophar has since
+--     onboarded -- the existing modland/Zophar dedup working on fresher data,
+--     unrelated to the platform split.
+-- 101: modland's "Capcom Q-Sound Format" (8 .miniqsf rips) moves from "Other
+--     Platforms" to Arcade, folded into the existing "Arcade (Capcom)" group
+--     rather than forming a second Capcom row. QSound IS Capcom's CPS-1/CPS-2
+--     arcade sound hardware and all 8 are CPS board games (Street Fighter Alpha
+--     2, 19XX, Cadillacs & Dinosaurs, The Punisher, Warriors of Fate, both
+--     Mega Man arcade titles, Slam Masters), so "Other" was simply wrong.
+--     Two parts, because the drill names groups by the raw format string:
+--     format_map moves the label OTHER -> ARCADE, and buildSubPlatforms renames
+--     it to "Arcade (Capcom)" (the same hook that already makes "Arcade" ->
+--     "Arcade (Other)" and "Neo Geo" -> "Arcade (Neo Geo)").
+--     The Capcom logo is unaffected: consoleSubLogos keys on the format string,
+--     not the platform byte. Bump forces the reindex that rewrites the byte.
+-- 102: demozoo's "Sony Playstation Portable (PSP)" MP3 tag now resolves to the
+--     PSP platform (TAB: Sony -> Sony PSP) instead of "Other Platforms". The
+--     MP3/OGG rescue map already resolved the identically-shaped sibling tags
+--     ("Nintendo DS (NDS)" -> NDS, "Nintendo Game Boy Advance (GBA)" -> GBA),
+--     so PSP -> OTHER was simply an oversight -- the PSP byte and its filter
+--     already existed. One tune (Vowel-o, silvester21). Only MP3/OGG rows hit
+--     that map, which is why the ~130 other demozoo "MS-Dos"/"Linux" rows were
+--     never affected: they classify by extension (.xm/.s3m/.mod/.zip) instead.
+-- 103: the top-level "YouTube audio (no platform)" filter is gone; its 1103
+--     videos move into "Other Platforms". Consistency fix: 31512 of the 32615
+--     YouTube captures ALREADY classified to a real platform byte (pouet's
+--     "Youtube (<platform>)" tag -> platformNameToByte), so a separate top-level
+--     YouTube bucket for the leftovers was the odd one out. The leftovers were
+--     exactly three tags naming no hardware -- Animation/Video (1091, a rendered
+--     video), mIRC (10, script art), Alambik (2, a dead multimedia player) --
+--     which are the same kind of thing as Wild/JavaScript/PICO-8, already
+--     mapped to OTHER. They now appear in the Other drill as their own
+--     "Youtube (<tag>)" groups, next to the "Youtube (Wild)" (566) /
+--     "Youtube (JavaScript)" (415) groups that were always there.
+--     There is NO platform to recover for them: pouet names none. Combos still
+--     resolve to the hardware ("Youtube (Amiga AGA,Animation/Video)" -> Amiga).
+--     formatToByte's youtube fallback also changes YOUTUBE -> OTHER, so a future
+--     unrecognised pouet tag surfaces as a named group in the drill instead of
+--     carrying a byte that no filter matches (which would hide it entirely).
+--     The YOUTUBE byte is now never produced; kept in the enum (removing it
+--     would renumber every byte after it) but matched by no filter.
+-- 104: format_map now knows "macos"/"macosx intel"/"macosx ppc" -> MACOS and
+--     "ios" -> IOS. Those bytes were previously reachable ONLY via the YouTube
+--     path (platformNameToByte), so the TAB "Mac OS" filter held 72 YouTube
+--     videos and NONE of the 9 native macOS tunes (demozoo/scene.org
+--     executable-music .zip compo entries) -- those fell through to the
+--     extension fallback, where ".zip" keys nothing, so they reached no filter
+--     at all. Mac OS: 72 -> 81, and the 9 natives are findable.
+-- 105: the rest of the same asymmetry, found by auditing every
+--     platformNameToByte name against format_map (74 names known to the YouTube
+--     path were missing from format_map; these are the ones with real native
+--     rows). format_map now knows: windows/ms-dos/ms-dos/gus/linux -> PC,
+--     commodore plus/4 -> PRG, and atari lynx / commodore pet / commodore
+--     vic-20 / pico-8 / tic-80 / microw8 / raspberry pi / browser / calculator /
+--     custom hardware -> OTHER. "atari lynx" also corrects a MISFILE: the
+--     startsWith(f,"atari") fallback had been claiming it for the Atari ST
+--     filter. Songs reaching no platform filter: 18493 -> 18213 (the remainder
+--     is the separate "Demoscene" issue below).
+--     Dropped from the MP3/OGG rescue map the names format_map now resolves
+--     (windows/ms-dos/linux/custom hardware) -- format_map is consulted first,
+--     so they were unreachable there. Kept the names format_map does NOT know
+--     (amiga ppc/rtg, gba/nds/psp, mobile, gamepark gp2x): gating those on
+--     MP3/OGG stops them claiming a module that carries the same release tag.
+--     NOT fixed: 18209 rows tagged "Demoscene" (16884 .zip) still reach no
+--     filter -- demozoo records no platform for those productions and none is
+--     recoverable offline (checked: song.metadata empty, ext="zip",
+--     data/misc/demozoo-songs.md's platform column is blank for exactly these).
+--     Deciding them needs the archive's member list; see cmtest
+--     unclassified_songs for the live count.
+-- 106: rendered-audio containers keyed as EXTENSIONS in format_map (wav, flac,
+--     aiff, aif, mp2, m4a, aac, mp4, opus, mpeg, ac3, wma -> MP3), mirroring
+--     ffmpegExtensions() in FFMPEGPlugin.cpp. These are demozoo rows tagged
+--     "Demoscene" whose file IS the audio (~661 wav, ~312 flac, ~60 mp2, ~18
+--     m4a, ~4 aif, ~4 opus): we could already DECODE them, but no format_map
+--     entry keyed the extension, so they reached no platform filter. They now
+--     land in the MP3/OGG "no platform" filter, which is the right answer --
+--     rendered audio with no hardware. Songs reaching no filter: 18213 -> 17148.
+--     Deliberately NOT "8svx", which ffmpegExtensions() lists but is an Amiga
+--     IFF sample format (belongs to Amiga, not the rendered bucket).
+--     The remaining 17148 are 17096 ARCHIVE rows (16649 .zip, 263 .lha, 108
+--     .rar, 39 .7z, 33 .gz) needing an inner-member peek, plus ~52 stragglers on
+--     extensions we support but never keyed in format_map (.nsf 4, .a2m 2,
+--     .mgt 2, .prg 3, .flx 3, .mid 21) -- a separate, smaller gap.
+-- 107: the 17k "Demoscene" ARCHIVE rows are classified from what is actually
+--     INSIDE them. demozoo records no platform for these productions and none
+--     was recoverable offline (song.metadata empty, ext="zip", and
+--     data/misc/demozoo-songs.md's platform column is blank for exactly these),
+--     so filter_demozoo_archives.py --classify now reads each archive's member
+--     list and writes the member's real format into the platform column as the
+--     bare uppercase extension ("XM"/"MOD"/"IT"/"MP3"/...) -- the vocabulary
+--     ModArchive rows already use, which format_map keys and describeFormat
+--     expands for display ("Amiga - ProTracker"; see codeNames).
+--     Member lists come from HTTP RANGE reads, not downloads: a zip's central
+--     directory is at the END (one ~4KB tail read regardless of archive size),
+--     lha/rar headers are at the FRONT. ~100x lighter than the full-download
+--     pass it replaces. Verdicts cached, so re-applying after a
+--     build_demozoo.py --build (which regenerates demozoo.txt and wipes the
+--     labels) costs no network.
+--     16425 of 17022 relabelled; 568 have no playable member (left alone --
+--     use --dead-rows to drop those), 29 undecidable. .7z (39) and .tar.gz (33)
+--     are not range-peekable and pass through.
+--     Also keyed the module EXTENSIONS format_map only knew by long display
+--     name: sid/psid -> SID, nsf/nsfe -> NES, sap -> POKEY, mmd0-3 -> AMIGA.
+--     Without those, 44 of the peeked rows (and the pre-existing standalone
+--     .nsf/.sap rows) resolved to nothing despite being formats we play.
+-- 108: the ZIP track picker now derives its member allowlist FROM THE
+--     REGISTERED PLUGINS (MusicPlayerList::archiveExtensions) instead of two
+--     hand-maintained sets, so it accepts exactly what the app plays as a loose
+--     file. The lists had drifted badly: a zip holding only an Organya .org (or
+--     .mdl/.mo3/.a2m/.ftm/.ams/.prg) reported "No playable tracks in archive"
+--     though we ship a plugin that decodes it -- 129 demozoo archives were dead
+--     for this reason alone, and the same gap had already hidden Zophar's
+--     GameCube .adp / Xbox .wma rips until the list was patched by hand. ~70
+--     entries -> 200+. Subtracts not_supported_extensions.txt (else the picker
+--     would choose a member it is guaranteed to fail on) and keeps the
+--     song-preferred/audio-fallback split so a compo zip shipping a module plus
+--     its .mp3 preview still plays the module.
+-- 109: demozoo archive rows now carry the REAL inner format in their `ext`
+--     column instead of the "zip" wrapper (filter_demozoo_archives.py
+--     --classify, from the same cached member list as the label).
+--     The point is not cosmetic: songIsUnsupported() matches
+--     not_supported_extensions.txt against `ext`, so with ext="zip" that list
+--     was UNREACHABLE for every archive row -- an archive holding nothing but a
+--     Renoise .rns stayed indexed and surfaced in search as a dead entry that
+--     errors with "No playable tracks". With the real ext written, the lines
+--     ALREADY in that list (.exe 101, .rns 58, .xrns 55, .m8s 15, .d64, .bmx)
+--     finally gate ~240 of them -- and the rows STAY in demozoo.txt, so
+--     shipping a Renoise plugin later means deleting one not_supported line and
+--     reindexing, not re-onboarding. Deleting the rows would have thrown that
+--     away. Never writes a nested container (.lha/.lzx/...) into ext: we support
+--     those as top-level rows, and a not_supported line for one would silently
+--     kill the 263 real .lha rows.
+--     The picker additionally VERIFIES a member with the plugins' canHandle()
+--     rather than trusting its extension: archive.scene.org ships a plain text
+--     file named "scene.org" in ~1800 zips and OrgPlugin claims .org, so an
+--     extension-only gate picked the info file as the track. OrgPlugin's
+--     canHandle() checks the "Org-0x" magic and declines. (The script can't read
+--     magic -- it only has member names -- so it names those info files.)
+-- 110: the last of the extension-vs-display-name gap, found by peeking inside
+--     the demozoo archives: we ship a plugin for each of these but format_map
+--     only knew the plugin's display name, never the extension a member carries.
+--     Keyed a2m/mid -> ADPLUG, mdl/mo3 -> PCTRACKER, prg -> PRG (Tedplay), and
+--     let filter_demozoo_archives.py write those codes (plus SUNVOX, whose
+--     format-string entry already resolved to PC) as labels.
+--     Left unkeyed ON PURPOSE: "ftm" (FamiTracker NES and OpenMPT's FTMN share
+--     the extension and are magic-gated -- an ext-keyed guess misfiles one) and
+--     "mix" (StSound: Atari ST YM vs Amstrad CPC rips).
+-- 111: archive picker: exclude UADE's PREFIX-ONLY tokens (js/dat/md/ml/pm/ps/di)
+--     from the derived song set. UADE's formats are modland prefixes
+--     ("js.songname") but UADEPlugin::canHandle also matches them as a suffix,
+--     so deriving the picker's list from the plugins (v108) made it claim
+--     ordinary JavaScript/data/Markdown files as music: ~270 scene.org zips ship
+--     "license_files/connection-min.js" beside the real module, and the .js won
+--     as the preferred "song" member -- a REGRESSION vs the old hand-list, which
+--     never listed those tokens. No real module is lost: a UADE module is
+--     "<fmt>.<title>", whose suffix is the title, so a suffix test never matched
+--     one through these. Each is UADE-only at priority -10.
+-- 112: 15 lines added to not_supported_extensions.txt for the formats left in
+--     demozoo archives that hold nothing playable (.adf/.bin/.com/.dll/.emd/
+--     .font/.iff/.j98/.mmd/.oss/.pp/.rbs/.sample/.t64/.wmv). Each verified to be
+--     claimed by NO plugin (cmtest priority_map), so nothing decodable is
+--     hidden; every affected row is in demozoo.txt, so no other collection is
+--     touched. With v109's real `ext` these finally gate, and the rows STAY in
+--     demozoo.txt -- a decoder later means deleting a line, not re-onboarding.
+--     NOT added: .js/.ml/.pm etc. Those are UADE prefix-only tokens (see v111);
+--     a ".js" line would hide any legitimate row carrying that ext, and the
+--     peek no longer writes them into `ext` anyway.
+-- 113: two fixes to the archive peek + readme-only archives gated.
+--     (a) zip_members scanned the whole tail slice for the PK\x01\x02 signature,
+--         so it also matched the central directory of any NESTED zip stored near
+--         the end -- inventing members that do not exist at this level (real
+--         case: b98mhs22.zip reported .xm/.exe/.pcb belonging to an inner
+--         Bbr-iltm.zip, which the app cannot reach anyway). It now parses ONLY
+--         the real central directory, whose bounds the EOCD gives exactly.
+--         Affected 116 of 16993 cached archives (0.68%); those were re-peeked.
+--     (b) ~130 scene.org compo entries are an archive containing nothing but a
+--         readme -- the tune was never uploaded -- so they were dead search hits
+--         ("No playable tracks in archive"). first_member_ext now reports the
+--         readme as the row's `ext` when there is nothing else, and .txt/.nfo/
+--         .diz are listed in not_supported_extensions.txt, which gates them.
+--         Safe: no plugin claims those, and no collection uses them as an ext,
+--         so the lines can only match an archive holding nothing else. The rows
+--         STAY in demozoo.txt -- if the file is ever re-uploaded upstream, a
+--         re-peek revives them; deleting would have needed a re-onboard.
+-- 114: label the archives that were ALIVE but unlabelled, and stop two more
+--     false-positive member picks.
+--     (a) The peek matched a member's format as a PREFIX as well as a suffix
+--         (for Amiga "mod.<title>" naming). Against a 1200-extension set that
+--         fires on ordinary filenames: "AD.EXE" -> ad, "SE.COM" -> se,
+--         "CP.CFG" -> cp, "sss.tap" -> sss. Worse, those picks were unreachable
+--         anyway -- the app's picker reads the SUFFIX (path_extension), so a
+--         prefix-named member inside a ZIP can never be played. Now suffix-only,
+--         which also un-shadowed 6 real .xm and 2 .it the junk had outranked.
+--     (b) "db"/"pat"/"cp" added to the picker's prefix-only exclusions (v111):
+--         UADE claims them, so "Thumbs.db" and "EPIANO1.PAT" were being picked
+--         as music.
+--     Keyed + labelled: mp4/aif/aiff/wma/ac3 (ffmpeg -> the MP3/OGG bucket),
+--     ams -> PCTRACKER, v2m -> PC, bbsong -> ZXBEEPER (Beepola), hsc/rad ->
+--     ADPLUG, ptcop -> PC. Still unlabelled by choice: mix/ftm (ambiguous, see
+--     v110) and snd (SC68 vs AdPlug vs vgmstream).
+-- 115: prefix matching is now per-CONTAINER (v114 made it suffix-only, which
+--     was right for ZIP but silently unlabelled ~90 .lha rows): LHA members
+--     carry Amiga/modland naming ("mod.<title>") that the app resolves via its
+--     ".lha/<member>" path, so prefixes are read there; ZIP members are read
+--     suffix-only, matching MusicPlayerList's picker.
+-- 116: no data change -- recorded here because it fixes a hole the whole session
+--     kept falling into. ChipPlugin::getSupportedExtensions() DEFAULTS TO EMPTY
+--     in the base class, and five plugins never overrode it: ptkplugin
+--     (.ptk/.ntk), tfmxplugin (mdat.), mp3plugin + minimp3plugin (.mp3) and
+--     GZPlugin (.gz). Anything deriving a list from it therefore could not see
+--     those formats: a loose .ptk played, but a .ptk inside a ZIP was "No
+--     playable tracks in archive", and the playability audit called those rows
+--     undecodable. Same shape as the Zophar .adp and Organya .org gaps.
+--     Each now declares its extensions, and a test ("every plugin declares its
+--     extensions") fails if a future plugin forgets -- guarding the default,
+--     which is the actual bug.
+--     tfmxplugin declares "mdat" for the audit's sake, but TFMX is named by
+--     PREFIX ("mdat.<title>"); the ZIP picker matches a suffix, so TFMX inside a
+--     zip stays unreachable. Documented in the header rather than papered over.
+--     Caught while doing it: mp3plugin calls itself "libmpg123", so its newly
+--     declared .mp3 landed in the picker's PREFERRED "song" bucket -- a compo zip
+--     could have played the .mp3 preview instead of the module. The archive-picker
+--     test caught it; the rendered-audio bucket now keys on a set of decoder
+--     names, not the single name "ffmpeg".
+-- 117 parseCsdb only accepted release types ending in "Music Collection",
+--     "Diskmag" or "Demo", so all 22112 plain "C64 Music" releases -- the most
+--     music-relevant type CSDb has -- were parsed and thrown away ("C64 Music"
+--     does not end with "Music Collection"; it reads like an endsWith slip,
+--     since csdb2plist.py treats type=='C64 Music' as compo-worthy). Accepting
+--     them links 8093 more HVSC SIDs to a product: 31197 -> 39290 of 61123
+--     (51.1% -> 64.4% of HVSC grouped). MODEST in practice, though: the product
+--     search index skips single-song products (HAVING count(*) > 1), and 20650
+--     of the 20910 linked "C64 Music" releases are a single SID -- so the
+--     user-visible gain is 260 new searchable product rows and 331 SIDs that
+--     newly join a searchable product. The other ~20.6k products sit in the
+--     table unseen. GROUPING/METADATA ONLY -- the csdb
+--     prod_list adds no songs; every HVSCPath is matched against HVSC's
+--     pathMap and dropped if absent, so CSDb cannot introduce a playable SID.
+--     NOT a screenshot change: every product link targets hvsc (csdb, gb64) or
+--     modland (bitworld) songs, and both collections return from the offline
+--     <collection>_screenshots.txt branch of getSongScreenshots before the
+--     product/levenshtein branch below it. That branch -- and its "+7 if gb64"
+--     bias against a music release stealing a real game shot -- is therefore
+--     unreachable for every song that has a product, so a "C64 Music" release
+--     named after its tune CANNOT displace the gb64 game shot (verified: e.g.
+--     GAMES/M-R/Meta_Galactic_Llamas.sid takes its gb64 shot from
+--     data/hvsc_screenshots.txt). Bump forces a reindex.
+-- 118: hide the 3 Demozoo .prg tunes built for machines we cannot emulate --
+--     two "Commodore VIC-20" and one "Commodore PET" -- which are the entire
+--     VIC-20/PET corpus in the index and made up both of those rows in the TAB
+--     platform drill's Other Platforms list.
+--     They were NOT misclassified: Demozoo's platform tag is right, and the
+--     files confirm it (load address $1001/$1001 = unexpanded VIC-20, $0401 =
+--     PET; a C64 prg would be $0801). The compo directory disagrees for one of
+--     them -- fabod.prg sits in the party's "c64_music/" folder -- but that is
+--     the folder name, not the hardware.
+--     They played SILENCE rather than failing. Our only .prg engine is tedplay
+--     (TED = C16/116/plus4) and it claims .prg on extension alone; plus/4 BASIC
+--     also starts at $1001, so the VIC-20 files pass as TED programs, run, and
+--     write to a VIC chip the emulated machine does not have. The PET file runs
+--     as garbage.
+--     Skipped by FORMAT (prgForUnemulatedMachine in MusicDatabase.cpp), not by
+--     extension: .prg carries 1364 playable rows (1238 TED, 126 C64), and the
+--     $1001 collision rules out a load-address content gate too. The match is
+--     exact-equality on the format string so the 96 playable "Youtube (VIC 20)"
+--     / "Youtube (Commodore PET)" capture rows are untouched.
+--     Playing them for real means building VICE's vic20/ + pet/ cores, which
+--     are vendored under vicepluginbridge but not compiled -- and our bridge is
+--     vsid (psid_load_file/psid_play, .sid only), which never runs executables,
+--     so it is a new machine-emulation harness (sound capture, PRG autostart,
+--     silence-based song end, per-machine symbol renaming since VICE is one
+--     machine per binary), not a plugin tweak. Not worth it for 3 songs; revisit
+--     if a real VIC-20 corpus lands (modland's 11 .vt Vic-Tracker tunes are also
+--     VIC-20 and also unplayable, but are tracker DATA needing the Vic-Tracker
+--     replayer, so an emulator alone would not unlock them).
+--     Bump forces a reindex.
+-- 119: TAB taxonomy: new top-level "Atari" group drilling into seven machines,
+--     and the Other Platforms drill loses every "Youtube (<platform>)" row.
+--     Five new format bytes split the Atari machines that were folded into a
+--     neighbour: ATARIVCS (was POKEY/"Atari 8bit" -- 161 tunes, the TIA is not
+--     a POKEY), ATARI7800 + ATARILYNX (were OTHER), ATARIFALCON + ATARIJAGUAR
+--     (were ATARI). Falcon is recovered from the EXTENSION (.gtk/.dtm/.mix
+--     under the ST byte) since its format strings say "Atari ST"; that replaces
+--     a display-only relabel, so those ~300 tunes are now filterable as Falcon.
+--     Two table disagreements fixed on the way: "atari jaguar" was mapped twice
+--     in format_map (OTHER then ATARI -- the second silently won), and
+--     "wonderswan" resolved to WONDERSWAN in format_map but OTHER in
+--     platformNameToByte, which split 11 captures from 177 native rips.
+--     A YouTube capture now groups with the hardware it was captured from
+--     (reversing the 2026-07-14 rule that kept them apart): "Youtube (Oric)"
+--     and "Oric" are one row. 71 drill groups -> 44, same 4618 songs.
+--     Bump forces a reindex: format bytes live in the cached index.dat.
+-- 120: split the JPFM byte (the old "PC-98/X68000/FM Towns" hack row) into a
+--     "Japanese Computers" drill of three machines. JPFM now means NEC PC-98
+--     specifically (FMP/PMD/S98 drivers, NEC PC-98/88/80 tags); new JPX68000
+--     (MDX, Sharp X68000/X1) and JPFMTOWNS (Euphony .eup, FM Towns, Fujitsu
+--     FM-7). ~6.9k MDX tunes move to X68000, ~0.9k Euphony to FM Towns; the
+--     ~6.1k FMP/PMD/S98/NEC rows stay on JPFM=PC-98. Combined logo retired;
+--     per-machine logos added. Bump forces a reindex (bytes live in index.dat).
+-- 121: search priority re-scaled so EVERY collection has a DISTINCT number (was:
+--     14 tied at 95, 9 at -80, etc. -- within a tier the stable_sort fell back to
+--     index order, so results interleaved arbitrarily; see the comparator in
+--     MusicDatabase::search). Data-only change; the engine already sorts by this
+--     column. The order encodes a listener who is into Amiga + C64 chiptunes and
+--     wants real modules to beat rendered audio. Format first, platform second:
+--        960     user playlists
+--     COMPUTERS, native chip/module, platform-ranked (high -> low):
+--        900-890 C64: hvsc, csdb, gb64
+--        885-865 Amiga: modland, unexotica, bitworld, amp, modarchive
+--        860-850 ZX Spectrum: zxart, zxtunes, projectay (just below Amiga/C64)
+--        840     Atari ST (sndh); 835 PC OPL (oplarchive)
+--        825-815 Atari 8-bit (asma), Amstrad CPC (cpcpower), X68000 (vampi)
+--        780-760 multi-platform computer scene/modules: demozoo, sceneorg,
+--                keygenmusic, mirsoft, botb
+--        740     Plus/4 TED (hvtc) -- deprioritised, below other-platform modules
+--     CONSOLES, native chip rips (all below computers):
+--        700-685 nsfe, rsn, smspower, vgmrips
+--     RENDERED mp3/ogg, recordings & remixes (below every native module):
+--        400-340 chipmusic, zophar, rko, amigaremix, ocremix, scenesat
+--     YOUTUBE:
+--       -120     pouet (Pouet/YouTube)
+--     THE VERY BOTTOM -- below YouTube, in this order:
+--       -140     manual patch (hand-maintained YouTube extras)
+--       -160..-176 the nine podcasts (C64/Amiga ones highest)
+--       -200     radio (live streams) -- the last row of all
+--     Bump forces the reindex that repopulates the priority column.
+-- 122: match-quality tiebreak added to the search comparator, and the bottom of
+--     the priority order rearranged. manual patch (which plays hand-maintained
+--     YouTube links, NOT metadata corrections -- the old note misdescribed it),
+--     the podcasts, and radio now sink BELOW pouet/YouTube, with radio dead last
+--     (-200). The comparator in MusicDatabase::search now sorts by collection
+--     priority PRIMARY, then match quality SECONDARY (exact > prefix > word-start
+--     > substring): since every collection has a distinct priority, the tiebreak
+--     only reorders rows WITHIN one collection, so the closest title matches from
+--     a given source come first. The comparator half is an engine change (needs a
+--     rebuild); the priority-value moves are the data change this bump reindexes.
+-- 123: BotB VGM register-logs reclassified by CHIP, not compo token. 1038 of the
+--     1039 generic "VGM" (OTHER) rows now carry their real platform, read from
+--     each file's VGM chip-clock header (HuC6280->PC Engine, YM2612->Genesis,
+--     GB DMG->Game Boy, AY8910 by clock->Spectrum/CPC/Atari ST, K051649 SCC->MSX,
+--     YM2610->Neo Geo, QSound/C140/...->Arcade, etc.). build_botb.py now consults
+--     data/botb_vgm_platforms.txt (url->platform, the committed header analysis)
+--     which overrides the 5-token VGM_PLATFORM guess. One extra-header-only file
+--     stays "VGM". Pure metadata: playback is .vgm extension-driven, unchanged.
+-- 124: the last "VGM" row removed. Its one member ("Visible Confusion", an
+--     extra-header-only log our chip peek couldn't read) was silent, so the song
+--     is dropped from data/botb.txt and the "VGM" Other sub-platform ceases to
+--     exist. format_map["vgm"] deleted; build_botb.py now SKIPS any unclassified
+--     VGM instead of emitting a generic "VGM" bucket.
+-- 125: Commodore VIC-20 becomes a real platform (new VIC20 format byte + TAB
+--     filter row "Commodore VIC-20"). format_map["vic-tracker"] routes the 11
+--     modland "Vic-Tracker" .vt tunes there; they are now PLAYABLE via the new
+--     victrackerplugin (Kahlin's 6502 VIC-TRACKER replayer on fake6502 + the
+--     VIC-I sound core from VICE). platformNameToByte also folds any
+--     "Youtube (VIC 20)" captures onto the same platform. This overturns the
+--     VERSION 118 note that parked .vt as "tracker DATA needing the Vic-Tracker
+--     replayer" -- that replayer is now vendored. The unemulated VIC-20/PET .prg
+--     tunes stay hidden (prgForUnemulatedMachine), so the platform holds only
+--     playable tunes. Bump forces a reindex: the format byte lives in index.dat.
+-- 126: Neo Geo Pocket promoted from an "Other Platforms" sub-platform to its own
+--     top-level TAB filter row. New NEOGEOPOCKET format byte; format_map
+--     "neo geo pocket" now maps there instead of OTHER (the 18 vgmrips rows), and
+--     platformNameToByte follows so any future capture merges in. The Other drill
+--     loses that sub-platform. Logo "Neo Geo Pocket.png" already shipped. Bump
+--     forces a reindex: the format byte lives in index.dat.
+-- 127: ColecoVision dedup fix. Antarctic Adventure & M.A.S.H rode into
+--     data/smspower.txt as duplicates of modland's already-playable
+--     "Video Game Music/Colecovision/" .vgz rips (build_smspower.py deduped
+--     modland only for Sega Master System / Game Gear, not Colecovision). Their
+--     live smspower.org /uploads/Music/*-ColecoVision.zip packs 500 on the
+--     server, so the ColecoVision drill showed 4 games, 2 dead. Removed both
+--     dead smspower rows (+ their screenshot rows) and added the Colecovision
+--     prefix to MODLAND_DUP_PREFIXES so a rebuild won't re-add them. Also dropped
+--     the same two games from data/zophar.txt, where Zophar's "sega-master-system
+--     -vgm" grab-bag had them mislabeled as "Sega Master System" (a coleco->sega
+--     miscategorization) -- modland is now the single ColecoVision source for
+--     both. (SG-1000/FM rows in that category stay: SG-1000 correctly folds into
+--     SEGAMS, FM is a chip variant.) Pure data; bump forces a reindex.
+-- 128: ZX Spectrum AY format-label normalization. zxart onboarded every AY tune
+--     under the coarse platform string "Spectrum AY"; modland carries the specific
+--     tracker name for the SAME files (.stc -> "ST Song Compiler", .pt3 -> "Pro
+--     Tracker 3", ...), so one tune appeared under two Format buckets. generateIndex
+--     now re-specializes a "Spectrum AY" row by its REAL EXT via an allowlist
+--     (pt1/pt2/pt3/asc/stc/stp/stp2/st11/st13/sqt/psc/vtx/vt2/ftc/fxm/chi/gtr), so
+--     zxart and modland collapse onto one canonical label. Exts left coarse on
+--     purpose: ogg (render fallbacks), ay (container), psg (register dumps), tfe,
+--     psm (ambiguous). All canonical names already map to ZXAY in format_map, so
+--     the platform byte / F9 "ZX Spectrum" filter is unchanged. Engine-side (no
+--     data rebuild); the format string lives in the index, so bump forces a reindex.
+VERSION = 128;
 
 DB = {
 {
@@ -549,7 +971,7 @@ DB = {
 	-- the Internet Archive mirsoftJuly2021snapshot .tar.xz by chipmachine/scripts/build_mirsoft.py.
 	name = "World of Game MODs",
 	id =  "mirsoft",
-	priority = 50,  -- game tracker modules: real rips, but thin metadata -> below the archives
+	priority = 765,  -- game tracker modules: real rips, thin metadata
 	source = "http://mirsoft.info/gamemods/",
 	song_list = "data/mirsoft.txt",
 	song_template = "title composer format path ext",
@@ -558,7 +980,7 @@ DB = {
 {
 	name = "unexotica",
 	id =  "unexotica",
-	priority = 95,  -- native Amiga game chip rips
+	priority = 880,  -- native Amiga game chip rips
 	source = "ftp://files.exotica.org.uk/pub/exotica/media/audio/UnExoticA",
 	song_list = "data/unexotica.txt",
         song_template = "title game format composer path",
@@ -569,7 +991,7 @@ DB = {
 	-- full mdx.vampi.tech/data/<file> URL (source empty). Plays via mdxplugin.
 	name = "Vampi MDX",
 	id =  "vampi",
-	priority = 95,  -- native X68000 MDX chip archive
+	priority = 815,  -- native X68000 MDX chip archive
 	source = "",
 	song_list = "data/vampi.txt",
 	song_template = "title composer format path ext",
@@ -585,7 +1007,7 @@ DB = {
 	-- MusicDatabase format_map). source empty (full URLs in the path column).
 	name = "Zophar",
 	id =  "zophar",
-	priority = -50,  -- mostly recorded rips (streamed tier) -> sink below the native chip sources
+	priority = 390,  -- recorded game chip rips (streamed tier)
 	source = "",
 	song_list = "data/zophar.txt",
 	song_template = "title composer format path ext",
@@ -601,7 +1023,7 @@ DB = {
 	-- chipmachine/scripts/build_vgmrips.py.
 	name = "VGMRips",
 	id =  "vgmrips",
-	priority = 40,  -- video game music
+	priority = 685,  -- console/arcade VGM rips
 	source = "",
 	song_list = "data/vgmrips.txt",
 	song_template = "title composer format path ext",
@@ -618,7 +1040,7 @@ DB = {
 	-- chipmachine/scripts/build_smspower.py.
 	name = "SMS Power",
 	id =  "smspower",
-	priority = 95,  -- native Sega 8-bit VGM rips
+	priority = 690,  -- native Sega 8-bit VGM rips (console)
 	source = "",
 	song_list = "data/smspower.txt",
 	song_template = "title composer format path ext",
@@ -630,7 +1052,7 @@ DB = {
 	-- /YM/ files; source is empty.
 	name = "CPC-Power",
 	id =  "cpcpower",
-	priority = 95,  -- native Amstrad CPC YM archive
+	priority = 820,  -- native Amstrad CPC YM archive
 	source = "",
 	song_list = "data/cpcpower.txt",
 	song_template = "title composer format path ext",
@@ -642,7 +1064,7 @@ DB = {
 	-- libvgmplugin (GME can't decode OPL); format "OPL Archive" -> AdLib/OPL.
 	name = "OPL Archive",
 	id =  "oplarchive",
-	priority = 95,  -- native OPL2/OPL3 rips
+	priority = 835,  -- native PC OPL2/OPL3 rips
 	source = "",
 	song_list = "data/oplarchive.txt",
 	song_template = "title composer format path ext",
@@ -658,7 +1080,7 @@ DB = {
 	-- chipmachine/scripts/build_demozoo.py.
 	name = "Demozoo",
 	id =  "demozoo",
-	priority = 30,  -- demoscene music
+	priority = 780,  -- demoscene modules (multi-platform, computer)
 	source = "",
 	song_list = "data/demozoo.txt",
 	song_template = "title composer format path ext",
@@ -672,7 +1094,7 @@ DB = {
 	-- chipmachine/scripts/build_sceneorg.py from data/misc/scene.org/*.tsv.
 	name = "scene.org",
 	id =  "sceneorg",
-	priority = 30,  -- demoscene music
+	priority = 775,  -- demoscene tracker modules
 	source = "",
 	song_list = "data/sceneorg.txt",
 	song_template = "title composer format path ext",
@@ -681,7 +1103,7 @@ DB = {
 {
 	name = "modarchive",
 	id =  "modarchive",
-	priority = 90,  -- broad tracker mirror: overlaps modland, let modland win folds
+	priority = 865,  -- broad tracker mirror (Amiga-heavy); modland wins the fold
 	source = "https://api.modarchive.org/downloads.php?moduleid=",
 	song_list = "data/modarchive.txt",
 	song_template = "title ext path format",
@@ -693,7 +1115,7 @@ DB = {
 	-- music.zxart.ee/music/), so `source` is empty and the URL is used verbatim.
 	name = "zxart.ee",
 	id =  "zxart",
-	priority = 95,  -- native ZX Spectrum AY archive
+	priority = 860,  -- native ZX Spectrum AY archive
 	source = "",
 	song_list = "data/zxart.txt",
 	song_template = "title composer format path ext",
@@ -711,7 +1133,7 @@ DB = {
 	-- chipmachine/scripts/build_zxtunes.py.
 	name = "zxtunes.com",
 	id =  "zxtunes",
-	priority = 95,  -- native ZX Spectrum AY archive
+	priority = 855,  -- native ZX Spectrum AY archive
 	source = "https://zxtunes.com/downloads.php?id=",
 	song_list = "data/zxtunes.txt",
 	song_template = "title composer format path ext",
@@ -720,7 +1142,7 @@ DB = {
 {
 	name = "Playlists",
 	id =  "pl",
-	priority = 60,  -- user playlists: above the bulk archives, below the canonical chip sources
+	priority = 960,  -- user playlists: surface high, below the canonical chip sources
 	local_dir = "data/playlists",
 	color = 0xfffff
 },
@@ -731,7 +1153,7 @@ DB = {
 	-- 0, may be negative to sink below the default mass). Every collection now
 	-- carries one -- see the VERSION 97 note for the tier scheme. HVSC is the
 	-- definitive C64 SID archive -> top tier.
-	priority = 100,
+	priority = 900,  -- C64 SID -- the definitive archive, wins C64 folds
 	source = "https://www.hvsc.c64.org/download/C64Music/",
 	song_list = "data/hvsc.txt",
 	remote_list = "http://raw.githubusercontent.com/sasq64/cmds/master/hvsc.txt",
@@ -740,7 +1162,7 @@ DB = {
 {
 	name = "Gamebase64",
 	id =  "gb64",
-	priority = 40,  -- video game music
+	priority = 890,  -- C64 game music (screenshots only; index=no)
 	prod_list = "data/Games.csv",
 	-- gb64.com is now behind a Cloudflare JS/Turnstile challenge that returns 403
 	-- to every non-browser client (no User-Agent or header trick gets past it).
@@ -754,7 +1176,7 @@ DB = {
 {
 	name = "CSDb",
 	id =  "csdb",
-	priority = 95,  -- native C64 demoscene chip rips
+	priority = 895,  -- C64 demoscene chip rips
 	local_dir = "",
 	prod_list = "data/csdb.xml",
 	color = 0xfffff
@@ -762,7 +1184,7 @@ DB = {
 {
 	name = "Modland",
 	id =  "modland",
-	priority = 100,  -- the definitive Amiga/tracker archive
+	priority = 885,  -- Amiga/tracker -- definitive, wins Amiga/module folds
 	source = "https://modland.com/pub/modules/",
 	song_list = "data/allmods.txt",
 	local_dir = "/opt/Music/MODLAND",
@@ -777,7 +1199,7 @@ DB = {
 	-- by magic, then the `ext` column routes it. Built by chipmachine/scripts/build_amp.py.
 	name = "Amp",
 	id =  "amp",
-	priority = 90,  -- broad tracker mirror: overlaps modland, let modland win folds
+	priority = 870,  -- Amiga Music Preservation (broad tracker mirror)
 	source = "https://amp.dascene.net/downmod.php?index=",
 	song_list = "data/amp.txt",
 	song_template = "title composer format path ext",
@@ -786,7 +1208,7 @@ DB = {
 {
 	name = "Bitworld",
 	id =  "bitworld",
-	priority = 95,  -- native Amiga demoscene chip rips
+	priority = 875,  -- native Amiga demoscene chip rips
 	prod_list = "data/bitworld.txt",
 	screen_source = "http://kestra.exotica.org.uk/files/screenies/",
 	color = 0xfffff
@@ -794,7 +1216,7 @@ DB = {
 {
 	name = "HVTC",
 	id =  "hvtc",
-	priority = 95,  -- native Plus/4 chip archive
+	priority = 740,  -- Plus/4 TED -- deprioritised, below other-platform modules
 	source = "https://plus4world.powweb.com/feat/tedsound/hvtc/",
 	song_list = "data/hvtc.txt",
 	-- this one has local files! (like nsfe -> music/Console)
@@ -811,7 +1233,7 @@ DB = {
 	-- gmeplugin (Ayfly renders CPC rips silent). source empty (local files).
 	name = "Project AY",
 	id =  "projectay",
-	priority = 95,  -- native ZX/CPC AY rips
+	priority = 850,  -- native ZX/CPC AY rips
 	source = "",
 	song_list = "data/projectay.txt",
 	song_template = "title composer format path ext",
@@ -821,7 +1243,7 @@ DB = {
  {
 	name = "snesmusic.org",
 	id =  "rsn",
-	priority = 40,  -- video game music
+	priority = 695,  -- native SNES SPC rips (console)
 	source = "https://snesmusic.org/v2/download.php?spcNow=",
 	make_source = snes,
 	song_list = "data/rsn.txt",
@@ -832,7 +1254,7 @@ DB = {
 {
 	name = "sndh",
 	id =  "sndh",
-	priority = 95,  -- native Atari ST chip archive
+	priority = 840,  -- native Atari ST chip archive
 	source = "https://sndh.atari.org/sndh/sndh_lf/",
 	song_list = "data/sndh.txt",
 	remote_list = "http://raw.githubusercontent.com/sasq64/cmds/master/sndh.txt",
@@ -842,7 +1264,7 @@ DB = {
 {
 	name = "asma",
 	id =  "asma",
-	priority = 95,  -- native Atari 8-bit POKEY archive
+	priority = 825,  -- native Atari 8-bit POKEY archive
 	source = "https://asma.atari.org/asma/",
 	song_list = "data/asma.txt",
 	remote_list = "http://raw.githubusercontent.com/sasq64/cmds/master/asma.txt",
@@ -852,12 +1274,22 @@ DB = {
 {
 	name = "remix.kwed.org",
 	id =  "rko",
-	priority = -50,  -- Remix.Kwed.Org: C64 SID remixes -> sink below HVSC
+	priority = 370,  -- Remix.Kwed.Org: C64 SID remixes (MP3)
 	source = "https://remix.kwed.org/download.php/",
 	song_list = "data/rko.txt",
 	utf8 = "no",
 	song_template = "path sidname sidsong title composer rating",
 	format = "MP3",
+	-- Every rko path is a bare remix id ("5136") with no extension, and rko.txt
+	-- carries no ext column, so internExt() had nothing to intern: formatKey came
+	-- out 0 and add_unique's "unknown format -> keep both" guard meant no rko song
+	-- could EVER fold against its twin elsewhere (all 5217 rows). Declared as a
+	-- collection-level default rather than a 7th rko.txt column on purpose: the
+	-- list is re-pulled from `remote_list` upstream, which has 6 columns, and
+	-- parseStandard drops any row with fewer fields than the template -- a 7-token
+	-- template would silently delete the whole collection on the next refresh.
+	-- Verified by fetch: all sampled ids return ID3/MPEG-frame magic.
+	ext = "mp3",
 	remote_list = "http://raw.githubusercontent.com/sasq64/cmds/master/rko.txt",
 	local_dir = "/opt/Music/rko",
 	color = 0xfffff
@@ -865,11 +1297,19 @@ DB = {
 {
 	name = "amigaremix",
 	id =  "amigaremix",
-	priority = -50,  -- Amiga remixes -> sink below originals
+	priority = 360,  -- Amiga remixes (MP3)
 	source = "https://www.amigaremix.com/listen/",
 	song_list = "data/amiremix.txt",
 	song_template = "no path title composer",
 	format = "MP3",
+	-- Same formatKey==0 gap as rko, but from bad data rather than by design: 3 of
+	-- the 1711 upstream rows lost the ".mp3" off their url (amiremix.txt:1451
+	-- ".../soundspawner_-_-_amigaremix_03442"), so path_extension found nothing to
+	-- intern and those 3 could never fold. They still PLAY -- the host routes on
+	-- the slug and answers 206 audio/mpeg with or without the suffix -- so this is
+	-- a dedup fix, not a playback one. No-op for the other 1708, which already
+	-- derive "mp3" from the path; every row in the set is an mp3.
+	ext = "mp3",
 	remote_list = "http://raw.githubusercontent.com/sasq64/cmds/master/amiremix.txt",
 	local_dir = "/opt/Music/amiremix",
 	color = 0xfffff
@@ -877,7 +1317,7 @@ DB = {
 {
 	name = "scenesat",
 	id =  "scenesat",
-	priority = -50,  -- rendered/streamed audio -> sink below the native chip sources
+	priority = 340,  -- rendered/streamed audio
 	source = "https://static.scenesat.com/",
 	song_list = "data/scenesat.txt",
 	song_template = "composer game title format path",
@@ -893,7 +1333,7 @@ DB = {
 	-- Unclassified MP3/OGG. Built by chipmachine/scripts/build_chipmusic.py.
 	name = "Chipmusic",
 	id =  "chipmusic",
-	priority = 80,  -- community chiptune, rendered MP3 rather than the native module
+	priority = 400,  -- community chiptune, rendered MP3 (not native module)
 	source = "",
 	song_list = "data/chipmusic.txt",
 	song_template = "title composer format path",
@@ -909,7 +1349,7 @@ DB = {
 	-- (getSongScreenshots botb branch). Built by scripts/build_botb.py.
 	name = "Battle of the Bits",
 	id =  "botb",
-	priority = 80,  -- original community chiptunes, but composed-for-compo rather than archival
+	priority = 760,  -- original community chiptunes
 	source = "",
 	song_list = "data/botb.txt",
 	song_template = "title composer format path ext",
@@ -925,7 +1365,7 @@ DB = {
 	-- (getSongScreenshots ocremix branch). Built by scripts/build_ocremix.py.
 	name = "OC ReMix",
 	id =  "ocremix",
-	priority = -50,  -- OverClocked ReMix: arranged game-music remixes -> sink below originals
+	priority = 350,  -- arranged game-music remixes (MP3)
 	source = "",
 	song_list = "data/ocremix.txt",
 	song_template = "title game composer format path",
@@ -940,7 +1380,7 @@ DB = {
 	-- Built by scripts/build_keygenmusic.py.
 	name = "keygenmusic",
 	id =  "keygenmusic",
-	priority = 80,  -- scene chip/tracker tunes, dupes modland/modarchive in part
+	priority = 770,  -- keygen-scene chip/tracker tunes
 	source = "",
 	song_list = "data/keygenmusic.txt",
 	song_template = "title composer format path ext",
@@ -962,7 +1402,7 @@ DB = {
 {
 	name = "Demovibes",
 	id =  "demovibes",
-	priority = -80,  -- podcast
+	priority = -164,  -- podcast (demoscene)
 	source = "https://www.demovibes.org/downloads/",
 	song_list = "data/demovibes.txt",
 	podcast = "yes",
@@ -971,7 +1411,7 @@ DB = {
 {
 	name = "Amigavibes",
 	id =  "amigavibes",
-	priority = -80,  -- podcast
+	priority = -162,  -- podcast (Amiga)
 	source = "https://stats.podcloud.fr/amigavibes/",
 	song_list = "data/amigavibes.txt",
 	song_template = "title format path",
@@ -982,7 +1422,7 @@ DB = {
 {
 	name = "Radio",
 	id =  "radio",
-	priority = -100,  -- live radio streams: last
+	priority = -200,  -- live radio streams: the very last row
 	source = "",
 	song_list = "data/radio.txt",
 	color = 0xfffff
@@ -1027,7 +1467,7 @@ DB = {
 {
 	name = "Syntax Error",
 	id =  "syntax",
-	priority = -80,  -- podcast
+	priority = -166,  -- podcast
 	source = "http://se-ksd-01.files.syntaxerror.nu/mp3/",
 	song_list = "data/syntax.txt",
 	song_template = "path title",
@@ -1044,7 +1484,7 @@ DB = {
 {
         name = "NSFE",
         id = "nsfe",
-        priority = 95,  -- native NES 2A03 rips
+        priority = 700,  -- native NES 2A03 rips (console)
         source = "",
         song_list = "data/nsfe.txt",
         -- this one has local files!
@@ -1056,7 +1496,7 @@ DB = {
 {
 	name = "C64 Take-away",
 	id = "takeaway",
-	priority = -80,  -- podcast
+	priority = -160,  -- podcast (C64)
 	type =  "podcast",
 	source = "",
 	song_list = "data/c64takeaway.xml",
@@ -1067,7 +1507,7 @@ DB = {
 {
 	name = "Completely Unnecessary Podcast",
 	id = "cupodcast",
-	priority = -80,  -- podcast
+	priority = -170,  -- podcast
 	type = "podcast",
 	source = "",
 	-- Full catalogue (395 eps, 2013-) snapshotted from the live Anchor feed;
@@ -1082,7 +1522,7 @@ DB = {
 	-- Chiptune music-mix show (Dj CUTMAN); ran 2013-2017, full archive.
 	name = "This Week in Chiptune",
 	id = "twic",
-	priority = -80,  -- podcast
+	priority = -168,  -- podcast
 	type = "podcast",
 	source = "",
 	song_list = "data/twic.xml",
@@ -1094,7 +1534,7 @@ DB = {
 	-- Video game music podcast: discussion + tracks, with interviews.
 	name = "Pixelated Audio",
 	id = "pixelated",
-	priority = -80,  -- podcast
+	priority = -172,  -- podcast (VGM)
 	type = "podcast",
 	source = "",
 	song_list = "data/pixelated.xml",
@@ -1106,7 +1546,7 @@ DB = {
 	-- KNGI Network VGM music show (original tracks, OSTs, chiptunes).
 	name = "GameFuel",
 	id = "gamefuel",
-	priority = -80,  -- podcast
+	priority = -174,  -- podcast (VGM)
 	type = "podcast",
 	source = "",
 	song_list = "data/gamefuel.xml",
@@ -1118,7 +1558,7 @@ DB = {
 	-- KNGI Network video game music + remixes show.
 	name = "Nitro Game Injection",
 	id = "nitro",
-	priority = -80,  -- podcast
+	priority = -176,  -- podcast (VGM)
 	type = "podcast",
 	source = "",
 	song_list = "data/nitro.xml",
@@ -1129,7 +1569,7 @@ DB = {
 {
 	name = "Pouet/Youtube",
 	id =  "pouet",
-	priority = -50,  -- YouTube-backed demo audio -> sink below the native chip sources
+	priority = -120,  -- Pouet/YouTube-backed audio: above the bottom cluster below
 	source = "",
 	song_list = "data/pouet.txt",
 	screen_source = "http://content.pouet.net/files/screenshots/",
@@ -1142,7 +1582,7 @@ DB = {
 	-- verbatim per song (song_template `screenshot` keyword). source empty.
 	name = "Manual Patch",
 	id =  "manualpatch",
-	priority = 100,  -- manual metadata corrections: must win every dedup fold
+	priority = -140,  -- hand-maintained YouTube extras -- near the very bottom
 	source = "",
 	song_list = "data/manualDatabasePatch.txt",
 	song_template = "title format composer path screenshot info",

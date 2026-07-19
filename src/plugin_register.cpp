@@ -49,6 +49,7 @@ extern "C" {
     void ixsplugin_register();     // Ixalance (.ixs) via webixs (RE'd Shortcut Software synth tracker)
 #endif
     void musxplugin_register();    // Acorn Archimedes Tracker (.musx) via libxmp arch_loader
+    void fnkplugin_register();     // Funktracker (.fnk, MS-DOS, magic "Funk") via libxmp fnk_loader
     void cocoplugin_register();    // Coconizer / Acorn Archimedes (.coco) via libxmp coco_loader
     void mgtplugin_register();     // Megatracker / Atari ST (.mgt) via libxmp mgt_loader
     void medplugin_register();     // Old MED / Amiga "Music Editor" (.med, magic MED\x02..\x04) via libxmp med2/3/4_loader
@@ -72,6 +73,8 @@ extern "C" {
     void dmfplugin_register();         // DefleMask (.dmf) multi-system chiptune via vendored Furnace engine
 #endif
     void vgmstreamplugin_register();   // vgmstream (.adx/.hca/.fsb/... hundreds of game-audio containers) via vendored vgmstream
+    void victrackerplugin_register();  // VIC-TRACKER (.vt) Commodore VIC-20 via fake6502 + VICE VIC-I sound
+    void klystrackplugin_register();   // Klystrack (.kt) via vendored libksnd / klystron cyd synth
 }
 
 void register_plugins() {
@@ -123,6 +126,7 @@ void register_plugins() {
     ixsplugin_register();
 #endif
     musxplugin_register();
+    fnkplugin_register();
     cocoplugin_register();
     mgtplugin_register();
     medplugin_register();
@@ -146,4 +150,6 @@ void register_plugins() {
     dmfplugin_register();
 #endif
     vgmstreamplugin_register();
+    victrackerplugin_register();
+    klystrackplugin_register();
 }

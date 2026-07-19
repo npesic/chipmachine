@@ -60,12 +60,18 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
             { MSX, Console::BLUE },        { AMSTRAD, Console::LIGHT_GREY },
             { ACORN, Console::WHITE },     { SAMCOUPE, Console::PINK },
             { ATARI, Console::YELLOW },    { POKEY, Console::ORANGE },
+            { ATARIVCS, Console::BROWN },  { ATARI7800, Console::ORANGE },
+            { ATARIFALCON, Console::LIGHT_GREEN },
+            { ATARILYNX, Console::YELLOW },
+            { ATARIJAGUAR, Console::BROWN },
             { MP3, Console::GREEN },
             { APPLE, Console::CYAN },
             { M3U, Console::LIGHT_GREEN }, { RADIO, Console::ORANGE },
             { YOUTUBE, Console::RED },
             { PC, Console::CYAN },         { AMIGA, Console::LIGHT_BLUE },
             { JPFM, Console::PINK },       { PCTRACKER, Console::LIGHT_GREY },
+            { JPX68000, Console::ORANGE }, { JPFMTOWNS, Console::PURPLE },
+            { VIRTUALBOY, Console::RED },
             { 255, Console::ORANGE }
         };
 

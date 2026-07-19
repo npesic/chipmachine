@@ -259,7 +259,11 @@ TEST_CASE("OPL Archive routes to libvgm and plays", "[music]")
     musix::ChipPlugin::createPlugins("data");
     chipmachine::MusicPlayer mp{ ap };
     for (auto const& vgz : {"testmus/libvgm/2a03fox - Snowgoons vs Acid (OPL2).vgz",
-                            "testmus/libvgm/Zero - Shinespark (OPL3).vgz"}) {
+                            "testmus/libvgm/Zero - Shinespark (OPL3).vgz",
+                            // Virtual Boy VSU: libvgm has the only VSU core, so
+                            // this is the whole Nintendo Virtual Boy platform's
+                            // playback path.
+                            "testmus/libvgm/virtualboy-vsu.vgz"}) {
         REQUIRE(mp.playFile(vgz));
         int64_t sum = 0;
         for (int i = 0; i < 30 && sum == 0; ++i) {
@@ -289,6 +293,10 @@ TEST_CASE("VGMRips non-Sega VGM routes to libvgm", "[music]")
                              "testmus/libvgm/pc98-opn.vgz",
                              "testmus/libvgm/capcom-qsound.vgz",
                              "testmus/libvgm/namco-c140.vgz",
+                             // Virtual Boy VSU (@0xC4). The VB rips are the only
+                             // VSU logs we carry and they are what puts the
+                             // "Nintendo Virtual Boy" platform on the TAB screen.
+                             "testmus/libvgm/virtualboy-vsu.vgz",
                              // Dual AY8910 (Capcom 1942): GME instantiates one
                              // AY, so the 2nd chip's writes overflow Ay_Apu and
                              // abort ("addr < reg_count"). The dual-chip bit must
@@ -310,6 +318,355 @@ TEST_CASE("VGMRips non-Sega VGM routes to libvgm", "[music]")
 // its `format` label. Guard that each distinct label resolves to the right
 // platform byte -- never UNKNOWN (which would make the game invisible to every
 // TAB platform filter).
+// ChipPlugin::getSupportedExtensions() defaults to an EMPTY set in the base
+// class, so a plugin that identifies files only in canHandle() is invisible to
+// every caller that needs the set up front -- the archive track picker
+// (MusicPlayerList::archiveExtensions) and the priority_map / playability
+// audits. The symptom is silent and one-sided: a loose .ptk plays, but a .ptk
+// inside a zip is "No playable tracks in archive", and an audit reports those
+// rows as having no decoder at all.
+//
+// This guards the DEFAULT, which is the actual hole: a new plugin that forgets
+// to override it fails here instead of quietly dropping its format out of every
+// derived list. That is the same shape as the Zophar .adp and Organya .org gaps.
+TEST_CASE("every plugin declares its extensions", "[music]")
+{
+    musix::ChipPlugin::createPlugins("data");
+    std::vector<std::string> silent;
+    for (auto const& pl : musix::ChipPlugin::getPlugins())
+        if (pl->getSupportedExtensions().empty()) silent.push_back(pl->name());
+    INFO("plugins returning an empty getSupportedExtensions(): "
+         << [&] { std::string s; for (auto& n : silent) s += n + " "; return s; }());
+    REQUIRE(silent.empty());
+}
+
+// The ZIP track picker must accept exactly what the app plays as a loose file.
+// It used to carry two hand-maintained extension lists, which drifted: a zip
+// holding only an Organya .org reported "No playable tracks in archive" even
+// though OrgPlugin decodes it (129 demozoo archive rows were dead for exactly
+// this reason), and the same gap had already hidden Zophar's GameCube .adp /
+// Xbox .wma rips until someone patched the list by hand. The sets are now
+// derived from the registered plugins, so a new plugin can't reintroduce it.
+TEST_CASE("archive picker accepts every format the app can play", "[music]")
+{
+    musix::ChipPlugin::createPlugins("data");
+    auto const& [songExt, audioExt] = chipmachine::MusicPlayerList::archiveExtensions();
+    REQUIRE(songExt.size() > 200);   // was a 70-entry hand list
+
+    // The formats that were unfindable inside an archive.
+    for (auto* e : { "org", "mdl", "mo3", "a2m", "ftm", "ams", "prg" }) {
+        INFO("song ext " << e);
+        REQUIRE(songExt.count(e) == 1);
+    }
+    // Still classified as chip/module, i.e. preferred over a rendered preview.
+    for (auto* e : { "mod", "xm", "it", "sid", "nsf", "adp", "musx" }) {
+        INFO("song ext " << e);
+        REQUIRE(songExt.count(e) == 1);
+    }
+    // ffmpeg renderings stay the FALLBACK bucket, never the preferred one --
+    // otherwise a compo zip with a module + its .mp3 preview could play the mp3.
+    for (auto* e : { "mp3", "ogg", "flac", "wav", "opus", "wma" }) {
+        INFO("audio ext " << e);
+        REQUIRE(audioExt.count(e) == 1);
+        REQUIRE(songExt.count(e) == 0);
+    }
+    // .8svx stays in the AUDIO bucket, and that is correct here even though
+    // format_map deliberately files it under Amiga rather than the rendered
+    // "no platform" bucket: ffmpeg is the only plugin that decodes it, and this
+    // bucket only means "fallback if no chip/module member exists". A zip with a
+    // .mod next to a .8svx still plays the .mod. Two different questions -- what
+    // PLATFORM a format belongs to, vs which member the picker prefers.
+    REQUIRE(audioExt.count("8svx") == 1);
+    // Extensions we ship a plugin for but can't really play must NOT be picked:
+    // the picker would choose a member it is then guaranteed to fail on.
+    // (Only meaningful once the not-supported list is loaded; guard on that.)
+    if (auto* db = chipmachine::MusicDatabase::instance())
+        for (auto const& e : db->unsupportedExtensions()) {
+            INFO("not-supported ext " << e);
+            REQUIRE(songExt.count(e) == 0);
+            REQUIRE(audioExt.count(e) == 0);
+        }
+}
+
+// pouet YouTube captures classify by their "Youtube (<platform>)" tag. Tags that
+// name hardware resolve to it; tags that name none resolve to OTHER (the Other
+// Platforms drill), NOT to a YouTube-only bucket -- there is no such filter now.
+TEST_CASE("YouTube captures classify by their pouet platform tag", "[music]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    const std::string yt = "https://www.youtube.com/watch?v=abc";
+    struct { const char* fmt; uint8_t plat; } cases[] = {
+        { "Youtube (Amiga AGA)", AMIGA },
+        { "Youtube (Commodore 64)", SID },
+        { "Youtube (Windows)", PC },
+        { "Youtube (Virtual Boy)", VIRTUALBOY },
+        // Name no hardware -> Other Platforms, where the drill surfaces them
+        // under the bare tag ("Wild", "Animation/Video"). These three were the
+        // whole 1103-video bucket.
+        { "Youtube (Animation/Video)", OTHER },
+        { "Youtube (mIRC)", OTHER },
+        { "Youtube (Alambik)", OTHER },
+        { "Youtube (Wild)", OTHER },
+        // A combo naming real hardware still wins over the generic tag.
+        { "Youtube (Amiga AGA,Animation/Video)", AMIGA },
+        { "Youtube (Windows,Animation/Video)", PC },
+        // Every Atari machine reaches its own filter under the TAB "Atari"
+        // group -- a capture must land on the same byte as the native rips, or
+        // the platform is split in two (which is exactly what "atari jaguar"
+        // and "wonderswan" used to do: format_map and platformNameToByte
+        // disagreed, so natives and captures went to different filters).
+        { "Youtube (Atari VCS)", ATARIVCS },
+        { "Youtube (Atari 7800)", ATARI7800 },
+        { "Youtube (Atari Lynx)", ATARILYNX },
+        { "Youtube (Atari Jaguar)", ATARIJAGUAR },
+        { "Youtube (Atari Falcon 030)", ATARIFALCON },
+        { "Youtube (Atari XL/XE)", POKEY },
+        { "Youtube (Atari ST)", ATARI },
+        { "Youtube (Atari STe)", ATARI },
+        { "Youtube (Atari TT 030)", ATARI }, // TT folds in with ST/STE
+        { "Youtube (Wonderswan)", WONDERSWAN },
+        // Unrecognised tag: falls back to OTHER so the drill can surface it,
+        // rather than a byte no filter matches.
+        { "Youtube (Some Future Pouet Tag)", OTHER },
+    };
+    for (auto const& c : cases) {
+        INFO("format " << c.fmt);
+        REQUIRE(mdb.classifyFormat(c.fmt, yt) == c.plat);
+    }
+    // Nothing should classify to the now-unused YOUTUBE byte.
+    for (auto const& c : cases)
+        REQUIRE(mdb.classifyFormat(c.fmt, yt) != YOUTUBE);
+}
+
+// The Falcon-native sample trackers are recovered from the EXTENSION: their
+// format strings say "Atari ST" / name the tracker, so only .gtk/.dtm/.mix tells
+// the Falcon apart from the YM2149 ST line. Replaced a display-only relabel, so
+// the risk it guards against is real: .dtm is THREE different formats.
+TEST_CASE("Falcon sample trackers split from the Atari ST byte", "[database]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    // Falcon: the extension decides, whatever the format string claims.
+    REQUIRE(mdb.classifyFormat("Atari ST", "http://x/a.gtk") == ATARIFALCON);
+    REQUIRE(mdb.classifyFormat("Graoumf Tracker", "http://x/a.gtk") ==
+            ATARIFALCON);
+    REQUIRE(mdb.classifyFormat("Digital Tracker DTM", "http://x/a.dtm") ==
+            ATARIFALCON);
+    REQUIRE(mdb.classifyFormat("Atari Digi-Mix", "http://x/a.mix") ==
+            ATARIFALCON);
+    // The YM2149 ST chiptune formats are untouched -- same machine name, but a
+    // different extension means a different machine.
+    REQUIRE(mdb.classifyFormat("Atari ST", "http://x/a.snd") == ATARI);
+    REQUIRE(mdb.classifyFormat("Hippel ST", "http://x/a.hip") == ATARI);
+    // THE GUARD: .dtm is also DeFy AdLib Tracker (PC/AdLib) and DigiTrekker.
+    // Those never classify to ATARI, so the Falcon rule must not claim them --
+    // it would file a PC AdLib tune under an Atari Falcon.
+    REQUIRE(mdb.classifyFormat("DeFy AdLib Tracker", "http://x/a.dtm") !=
+            ATARIFALCON);
+    REQUIRE(mdb.classifyFormat("Digitrekker", "http://x/a.dtm") != ATARIFALCON);
+    // Graoumf Tracker 2 is the WINDOWS successor; the .gt2 override outranks
+    // both the "Atari ST" tag and the Falcon rule.
+    REQUIRE(mdb.classifyFormat("Atari ST", "http://x/a.gt2") == PCTRACKER);
+}
+
+// The three Japanese FM computers were one JPFM byte behind a combined
+// "PC-98/X68000/FM Towns" row; they now split into a "Japanese Computers" drill.
+// Both classification paths (driver format string AND platform tag) must route
+// each machine to its own byte, and the .mdx/.s98/pmd EXTENSION fallback too.
+TEST_CASE("Japanese FM computers split into three bytes", "[database]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    const std::string p = "http://x/a.zip"; // neutral path (no telltale ext)
+    // Driver format strings.
+    REQUIRE(mdb.classifyFormat("FM sound driver (FMP)", p) == JPFM);   // PC-98
+    REQUIRE(mdb.classifyFormat("PMD", p) == JPFM);                     // PC-98
+    REQUIRE(mdb.classifyFormat("S98", p) == JPFM);                     // PC-98
+    REQUIRE(mdb.classifyFormat("MDX", p) == JPX68000);                 // X68000
+    REQUIRE(mdb.classifyFormat("Euphony", p) == JPFMTOWNS);            // FM Towns
+    // Platform tags group by vendor: NEC -> PC-98, Sharp -> X68000,
+    // Fujitsu -> FM Towns.
+    REQUIRE(mdb.classifyFormat("NEC PC-98", p) == JPFM);
+    REQUIRE(mdb.classifyFormat("NEC PC-88", p) == JPFM);
+    REQUIRE(mdb.classifyFormat("Sharp X68000", p) == JPX68000);
+    REQUIRE(mdb.classifyFormat("Sharp X1", p) == JPX68000);
+    REQUIRE(mdb.classifyFormat("FM Towns", p) == JPFMTOWNS);
+    REQUIRE(mdb.classifyFormat("Fujitsu FM-7", p) == JPFMTOWNS);
+    // Extension fallback: a bare .mdx with no useful format string is X68000
+    // (the mdx/s98/pmd format_map keys double as extension keys).
+    REQUIRE(mdb.classifyFormat("", "http://x/song.mdx") == JPX68000);
+    REQUIRE(mdb.classifyFormat("", "http://x/song.s98") == JPFM);
+}
+
+// The Other/Arcade drill groups on the canonical sub-platform name, so this is
+// what decides that "Youtube (Oric)" and "Oric" are ONE row rather than two.
+// No "Youtube (<platform>)" row may survive it (rule reversed 2026-07-15: a
+// capture now groups with the hardware it was captured from).
+TEST_CASE("sub-platform names fold captures onto their hardware", "[database]")
+{
+    using namespace chipmachine;
+    struct { const char* fmt; const char* want; } cases[] = {
+        // The wrapper comes off, so capture and native rips share a row.
+        { "Youtube (Oric)", "Oric" },
+        { "Oric", "Oric" },
+        { "Youtube (Vectrex)", "Vectrex" },
+        { "Vectrex", "Vectrex" },
+        // Non-hardware tags unwrap literally rather than being renamed.
+        { "Youtube (Wild)", "Wild" },
+        { "Youtube (Animation/Video)", "Animation/Video" },
+        // Combos: the first tag naming real hardware wins over the compo tag.
+        { "Youtube (Wild,Raspberry Pi)", "Raspberry Pi" },
+        { "Youtube (Java,Mobile Phone)", "Mobile" },
+        // ...falling back to the first tag when none names hardware.
+        { "Youtube (Wild,JavaScript)", "Wild" },
+        { "Youtube (Java,Wild)", "Java" },
+        // Fantasy consoles are platforms, not compo buckets: they keep a row.
+        { "Youtube (MicroW8,PICO-8,TIC-80)", "MicroW8" },
+        // Aliases for variants the case-only fold in buildSubPlatforms misses.
+        // (Neo Geo Pocket is no longer here -- it was promoted to its own
+        // top-level NEOGEOPOCKET filter row, so it never reaches the Other drill.)
+        { "Youtube (Mobile Phone)", "Mobile" },
+        { "Youtube (Android)", "Mobile" },
+        { "Mobile", "Mobile" },
+        { "Youtube (VIC 20)", "Commodore VIC-20" },
+        // The two CPU-split TI-8x rows collapse to one calculator row; the two
+        // GamePark handhelds collapse to one vendor row (nested parens and all).
+        { "Youtube (TI-8x (Z80))", "TI-8x Calculator" },
+        { "Youtube (TI-8x (68k))", "TI-8x Calculator" },
+        { "Youtube (GamePark GP32)", "GamePark" },
+        { "Youtube (GamePark GP2X)", "GamePark" },
+        // The bare "Other" catch-all is relabelled to the playful "Easter Egg!"
+        // row (its logo is EasterEgg.png).
+        { "Other", "Easter Egg!" },
+        { "Youtube (Other)", "Easter Egg!" },
+        // Arcade strings carry no wrapper and no comma: untouched, so the
+        // vendor rules in buildSubPlatforms still see them verbatim.
+        { "Arcade (Capcom)", "Arcade (Capcom)" },
+        { "", "Unknown" },
+    };
+    for (auto const& c : cases) {
+        INFO("format '" << c.fmt << "'");
+        REQUIRE(MusicDatabase::subPlatformName(c.fmt) == std::string(c.want));
+    }
+    // The point of the exercise: no row may be named after YouTube.
+    for (auto const& c : cases)
+        REQUIRE(MusicDatabase::subPlatformName(c.fmt).find("Youtube") ==
+                std::string::npos);
+}
+
+// filter_demozoo_archives.py --classify replaces the generic "Demoscene" label
+// on an archive row with the real format of the member inside it (peeked via an
+// HTTP range read of the archive's directory), written as the bare uppercase
+// extension -- the same vocabulary keygenmusic/botb use in that column. Every
+// label it can emit must resolve to a real platform: one that format_map can't
+// key would leave the row exactly as unclassified as before the pass ran.
+// The path stays the ARCHIVE (.zip), so the trailing .mod/.xm extension
+// correction must not fire -- the label alone has to carry it.
+TEST_CASE("demozoo archive labels from the member peek classify", "[music]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    const std::string zip =
+        "https://archive.scene.org/pub/parties/2010/breakpoint10/mmul/x.zip";
+    struct { const char* fmt; uint8_t plat; } cases[] = {
+        { "MOD", PROTRACKER },   // Amiga
+        { "XM", FASTTRACKER },   // IBM PC
+        { "IT", IMPULSETRACKER },
+        { "S3M", SCREAMTRACKER },
+        { "DBM", AMIGA },        // DigiBooster
+        // Rendered audio -> the MP3/OGG "no platform" filter.
+        { "MP3", MP3 },          { "OGG", OGG },
+        { "WAV", MP3 },          { "FLAC", MP3 },
+    };
+    for (auto const& c : cases) {
+        INFO("label " << c.fmt);
+        uint8_t b = mdb.classifyFormat(c.fmt, zip);
+        REQUIRE(b != UNKNOWN_FORMAT);
+        REQUIRE(b == c.plat);
+    }
+}
+
+// demozoo/scene.org ARCHIVE rows (.zip/.rar compo releases) carry the release
+// platform as their format string and an extension format_map can't key. They
+// used to reach NO platform filter at all: format_map didn't know the platform
+// NAME either (only platformNameToByte did, which is the YouTube path), so they
+// fell through to the extension fallback, where ".zip" resolves to nothing.
+// The module rows next to them (.mod/.xm) must still be pulled to the platform
+// their FORMAT fixes, not the release tag -- guard both halves.
+TEST_CASE("demozoo archive rows classify by their release-platform tag", "[music]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    const std::string zip =
+        "https://archive.scene.org/pub/parties/2023/revision23/exe-music/x.zip";
+    struct { const char* fmt; const char* path; uint8_t plat; } cases[] = {
+        // The archive rows this fixes.
+        { "Windows", zip.c_str(), PC },
+        { "MS-Dos", zip.c_str(), PC },
+        { "Linux", zip.c_str(), PC },
+        { "macOS", zip.c_str(), MACOS },
+        { "Commodore Plus/4", zip.c_str(), PRG },
+        // Atari machines have their own filters under the TAB "Atari" group.
+        // These also guard a MISFILE: the startsWith(f,"atari") fallback claims
+        // any unlisted "Atari <machine>" for the ST/STE/TT filter.
+        { "Atari Lynx", zip.c_str(), ATARILYNX },
+        { "Atari 7800", zip.c_str(), ATARI7800 },
+        { "Atari Jaguar", zip.c_str(), ATARIJAGUAR },
+        { "Atari Falcon", zip.c_str(), ATARIFALCON },
+        { "Atari 2600 Video Computer System (VCS)", zip.c_str(), ATARIVCS },
+        // Real hardware with no filter of its own -> Other Platforms.
+        { "PICO-8", zip.c_str(), OTHER },
+        { "Browser", zip.c_str(), OTHER },
+        // The extension stays authoritative for module formats whose platform is
+        // fixed by the format itself, even when the release tag says otherwise.
+        { "MS-Dos", "https://media.demozoo.org/music/x.mod", PROTRACKER },
+        { "MS-Dos", "https://media.demozoo.org/music/x.xm", FASTTRACKER },
+        { "Windows", "https://media.demozoo.org/music/x.xm", FASTTRACKER },
+    };
+    for (auto const& c : cases) {
+        INFO("format " << c.fmt << " path " << c.path);
+        uint8_t b = mdb.classifyFormat(c.fmt, c.path);
+        REQUIRE(b != UNKNOWN_FORMAT); // the bug: matched by no filter at all
+        REQUIRE(b == c.plat);
+    }
+}
+
+// demozoo/scene.org MP3+OGG rips carry the source platform as their format
+// string rather than a codec. Those that name real hardware must resolve to it
+// instead of the "Other Platforms" / "Rendered Audio" buckets -- in particular
+// demozoo's "<Vendor> <Console> (<abbr>)" tags, where PSP used to land in Other
+// while the identically-shaped NDS/GBA tags next to it resolved correctly.
+// Gated on the extension classifying as MP3/OGG first, so the path matters.
+TEST_CASE("demozoo MP3 platform tags classify to their console", "[music]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    const std::string mp3 =
+        "https://archive.scene.org/pub/parties/2021/silvester21/music/x.mp3";
+    struct { const char* fmt; uint8_t plat; } cases[] = {
+        { "Sony Playstation Portable (PSP)", PSP },
+        { "Nintendo DS (NDS)", NDS },
+        { "Nintendo Game Boy Advance (GBA)", GBA },
+        { "Amiga", AMIGA },      { "ZX Spectrum", SPECTRUM },
+        { "Windows", PC },       { "MSX", MSX },
+        // No hardware identity of their own -> Other Platforms, by design.
+        { "Mobile", OTHER },     { "Custom Hardware", OTHER },
+    };
+    for (auto const& c : cases) {
+        INFO("format " << c.fmt);
+        REQUIRE(mdb.classifyFormat(c.fmt, mp3) == c.plat);
+    }
+    // A tag naming no hardware at all keeps the rendered-audio fallback.
+    REQUIRE(mdb.classifyFormat("Demoscene", mp3) == MP3);
+}
+
 TEST_CASE("VGMRips format labels classify to a platform", "[music]")
 {
     using namespace chipmachine;
@@ -321,10 +678,10 @@ TEST_CASE("VGMRips format labels classify to a platform", "[music]")
         { "Sega Mega Drive", MEGADRIVE }, { "Sega Pico", MEGADRIVE },
         { "NES", NES },                   { "Game Boy", GAMEBOY },
         { "PC Engine", HES },             { "Neo Geo", ARCADE },
-        { "Neo Geo Pocket", OTHER },      { "WonderSwan", WONDERSWAN },
+        { "Neo Geo Pocket", NEOGEOPOCKET }, { "WonderSwan", WONDERSWAN },
         { "MSX", MSX },                   { "NEC PC-98", JPFM },
-        { "NEC PC-88", JPFM },            { "Sharp X68000", JPFM },
-        { "FM Towns", JPFM },             { "IBM PC", PC },
+        { "NEC PC-88", JPFM },            { "Sharp X68000", JPX68000 },
+        { "FM Towns", JPFMTOWNS },        { "IBM PC", PC },
         { "Atari ST", ATARI },            { "ZX Spectrum", SPECTRUM },
         // chipmachine:: qualified: windows.h (via coreutils/file.h) defines a
         // global `SID` type (the Win32 security identifier), which would
@@ -332,7 +689,18 @@ TEST_CASE("VGMRips format labels classify to a platform", "[music]")
         { "Commodore 64", chipmachine::SID }, { "Apple IIgs", APPLE },
         { "Arcade", ARCADE },             { "Arcade (Capcom)", ARCADE },
         { "Arcade (Konami)", ARCADE },    { "Pinball", OTHER },
-        { "Atari Jaguar", ATARI },
+        { "Atari Jaguar", ATARIJAGUAR },
+        // modland's CPS-1/CPS-2 .miniqsf rips: QSound is Capcom arcade hardware,
+        // so these are ARCADE, not OTHER (buildSubPlatforms then folds the group
+        // into "Arcade (Capcom)").
+        { "Capcom Q-Sound Format", ARCADE },
+        // Consoles VGMRips files under "Other"; build_vgmrips.py now recovers
+        // them from the filename's hardware tag (TAG_PLATFORM). Before that they
+        // all carried the bare "Other" label and piled into the catch-all.
+        { "Nintendo Virtual Boy", VIRTUALBOY },
+        { "Vectrex", OTHER },             { "Amstrad CPC", AMSTRAD },
+        { "Sega SG-1000", SEGAMS },       { "Atari 8bit", POKEY },
+        { "Atari 7800", ATARI7800 },      { "Intellivision", OTHER },
     };
     for (auto const& c : cases) {
         INFO("format " << c.fmt);
@@ -457,7 +825,7 @@ TEST_CASE("mirsoft platform labels classify to a platform", "[music]")
         { "Nintendo 64", NINTENDO64 },   { "Sega Mega Drive", MEGADRIVE },
         { "Sega Master System", SEGAMS },{ "Sega Saturn", SATURN },
         { "Dreamcast", DREAMCAST },      { "Atari ST", ATARI },
-        { "Atari Falcon", ATARI },       { "Atari Jaguar", ATARI },
+        { "Atari Falcon", ATARIFALCON }, { "Atari Jaguar", ATARIJAGUAR },
         { "ZX Spectrum", SPECTRUM },     { "Amstrad CPC", AMSTRAD },
         { "PC Engine", HES },            { "Arcade", ARCADE },
     };
@@ -903,6 +1271,68 @@ TEST_CASE("GME", "[music]") { testPlugin<musix::GMEPlugin>("testmus/gme", "nowor
 TEST_CASE("LibVGM", "[music]") { testPlugin<musix::LibVGMPlugin>("testmus/libvgm", "nowork"); }
 
 TEST_CASE("VGMStream", "[music]") { testPlugin<musix::VGMStreamPlugin>("testmus/vgmstream", "nowork"); }
+
+// VIC-TRACKER (.vt) Commodore VIC-20 tunes (the modland "Vic-Tracker" corpus).
+// Each fixture runs Daniel Kahlin's own 6502 replayer on the fake6502 core with
+// the VIC-I sound core from VICE and must produce non-silent audio. The five
+// distribution songs cover the format's features (mystic=portamento only,
+// blippblopp=arpeggios, vt-theme/slowride=everything, djungel-zagor=multi-song).
+TEST_CASE("VicTracker", "[music]") { testPlugin<musix::VTPlugin>("testmus/victracker", "nowork"); }
+
+// The host routing path (createPlugins -> MusicPlayer::playFile -> getSamples),
+// which only works if victrackerplugin is registered in plugin_register.cpp --
+// testPlugin<> above bypasses registration by constructing the plugin directly.
+TEST_CASE("VicTracker host path plays sound", "[music]")
+{
+    auto ap = std::make_shared<AudioPlayerNull>();
+    const auto injector = di::make_injector(di::bind<utils::path>.to("."),
+                                            di::bind<AudioPlayer>.to(ap));
+    musix::ChipPlugin::createPlugins("data");
+    chipmachine::MusicPlayer mp{ ap };
+    bool ok = mp.playFile("testmus/victracker/vt-theme.vt");
+    REQUIRE(ok);
+    int64_t sum = 0;
+    for (int i = 0; i < 20 && sum == 0; ++i) {
+        mp.update();
+        std::vector<int16_t> data(8192);
+        ap->get(data);
+        for (auto val : data) {
+            if (val != 0) {
+                sum = 1;
+                break;
+            }
+        }
+    }
+    REQUIRE(sum != 0);
+}
+
+TEST_CASE("Klystrack", "[music]") { testPlugin<musix::KlystrackPlugin>("testmus/klystrack", "nowork"); }
+
+// Host routing path for klystrack (.kt) -- only works if klystrackplugin is
+// registered in plugin_register.cpp; testPlugin<> above bypasses registration.
+TEST_CASE("Klystrack host path plays sound", "[music]")
+{
+    auto ap = std::make_shared<AudioPlayerNull>();
+    const auto injector = di::make_injector(di::bind<utils::path>.to("."),
+                                            di::bind<AudioPlayer>.to(ap));
+    musix::ChipPlugin::createPlugins("data");
+    chipmachine::MusicPlayer mp{ ap };
+    bool ok = mp.playFile("testmus/klystrack/obspatial.kt");
+    REQUIRE(ok);
+    int64_t sum = 0;
+    for (int i = 0; i < 20 && sum == 0; ++i) {
+        mp.update();
+        std::vector<int16_t> data(8192);
+        ap->get(data);
+        for (auto val : data) {
+            if (val != 0) {
+                sum = 1;
+                break;
+            }
+        }
+    }
+    REQUIRE(sum != 0);
+}
 
 TEST_CASE("VGMStream host path plays sound", "[music]")
 {
@@ -1410,6 +1840,7 @@ TEST_CASE("SunVox", "[music]") { testPlugin<musix::SunVoxPlugin>("testmus/sunvox
 TEST_CASE("SoundSmith", "[music]") { testPlugin<musix::SoundSmithPlugin>("testmus/soundsmith", ""); }
 TEST_CASE("Musx", "[music]") { testPlugin<musix::MusxPlugin>("testmus/musx", ""); }
 TEST_CASE("Coconizer", "[music]") { testPlugin<musix::CocoPlugin>("testmus/coco", ""); }
+TEST_CASE("Funktracker", "[music]") { testPlugin<musix::FnkPlugin>("testmus/fnk", ""); }
 TEST_CASE("MaxTrax", "[music]") { testPlugin<musix::MaxTraxPlugin>("testmus/maxtrax", ""); }
 TEST_CASE("STarKos", "[music]") { testPlugin<musix::SksPlugin>("testmus/sks", ""); }
 TEST_CASE("NerdTracker2", "[music]") { testPlugin<musix::NEDPlugin>("testmus/ned", ""); }
@@ -3863,41 +4294,196 @@ TEST_CASE("Vice Stereo Sidplayer", "[music][vice]")
 // row per distinct format string) sorted by song count, so we can eyeball which
 // deserve promotion to a top-level TAB filter. Reads the live app music.db and
 // applies the real classifyFormat, so it matches the GUI drill exactly.
-TEST_CASE("other_platforms", "[.]")
+// Dumps the OTHER-byte sub-platform groups exactly as the TAB drill builds them:
+// straight through MusicDatabase::getOtherPlatformCount() -> buildSubPlatforms()
+// against the live cache DB. It must go through the real API rather than
+// re-grouping the song table here -- an earlier copy did the latter and silently
+// drifted, still showing the ColecoVision/Colecovision split after
+// buildSubPlatforms had been fixed to fold case-only variants.
+// Songs that reach NO platform filter. classifyFormat() returning UNKNOWN_FORMAT
+// means no TAB filter matches the song, so it is findable only via "[no filter,
+// search all]". Usually the cause is a format string that names a platform we
+// know but format_map doesn't (platformNameToByte knows it, so the YouTube path
+// resolves it while native rows fall through), landing on an extension the
+// format_map can't key either (.zip/.rar/.7z/.gz archives resolve to nothing).
+// Run against the live cache DB; prints the format strings worst affected.
+// Every label filter_demozoo_archives.py --classify can write, resolved through
+// the real classifier. Pass the labels as argv-free constants: the pass writes
+// the member's bare uppercase extension into the format column, and the path
+// stays the .zip, so this is exactly what the indexer will see. Any label
+// printing UNKNOWN_FORMAT leaves its rows reaching no filter, i.e. the pass
+// silently did nothing for them.
+// The archive picker's two extension sets, for tooling that must agree with the
+// app (filter_demozoo_archives.py reads this rather than hand-copying them --
+// hand-copies are exactly what drifted and made 129 live archives look dead).
+TEST_CASE("archive_picker_exts", "[.]")
 {
-    using chipmachine::MusicDatabase;
+    musix::ChipPlugin::createPlugins("data");
+    auto const& [song, audio] = chipmachine::MusicPlayerList::archiveExtensions();
+    for (auto const& e : song)
+        printf("song:%s\n", e.c_str());
+    for (auto const& e : audio)
+        printf("audio:%s\n", e.c_str());
+}
+
+TEST_CASE("peek_labels", "[.]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    const std::string zip = "https://archive.scene.org/pub/x/y.zip";
+    // Read the labels the pass ACTUALLY wrote, straight from demozoo.txt, rather
+    // than a hardcoded list that would drift from what the peek emits.
+    std::set<std::string> labels;
+    {
+        std::ifstream in("data/demozoo.txt");
+        std::string line;
+        while (std::getline(in, line)) {
+            auto c = utils::split(line, "\t");
+            if (c.size() < 5) continue;
+            // The pass writes a bare uppercase code; demozoo's own platform
+            // names ("Amiga", "ZX Spectrum") contain lowercase or spaces.
+            std::string f = c[2];
+            if (f.empty() || f.size() > 6) continue;
+            if (f.find(' ') != std::string::npos) continue;
+            if (std::any_of(f.begin(), f.end(),
+                            [](unsigned char ch) { return std::islower(ch); }))
+                continue;
+            labels.insert(f);
+        }
+    }
+    REQUIRE(labels.size() > 10); // sanity: we actually read the file
+    printf("\n--- peek label -> platform (%d distinct) ---\n", (int)labels.size());
+    for (auto const& lbl : labels) {
+        auto* l = lbl.c_str();
+        uint8_t b = mdb.classifyFormat(l, zip);
+        // platformScreenshotSlug() is the public byte->name view; it returns ""
+        // for the deliberately platform-less buckets (MP3/OGG/...), which is a
+        // valid answer here -- only UNKNOWN_FORMAT means "no filter at all".
+        std::string slug = MusicDatabase::platformScreenshotSlug(b);
+        printf("  %-6s -> byte %3d  %-24s %s\n", l, (int)b,
+               slug.empty() ? "(no-platform bucket)" : slug.c_str(),
+               b == UNKNOWN_FORMAT ? "*** NO FILTER ***" : "");
+    }
+    printf("------------------------------\n");
+}
+
+TEST_CASE("unclassified_songs", "[.]")
+{
+    using namespace chipmachine;
     auto dbPath = (Environment::getCacheDir() / "music.db").string();
     sqlite3db::Database db(dbPath);
-
-    auto trim = [](std::string x) {
-        size_t a = x.find_first_not_of(" \t");
-        if (a == std::string::npos) return std::string();
-        return x.substr(a, x.find_last_not_of(" \t") - a + 1);
-    };
-
-    std::map<std::string, int> byName;
-    int total = 0;
+    std::map<std::string, int> byFormat;
+    std::map<std::string, int> extOf;
+    int total = 0, unknown = 0;
     auto q = db.query<std::string, std::string>("SELECT format, path FROM song");
     while (q.step()) {
         std::string fmt, path;
         std::tie(fmt, path) = q.get_tuple();
-        if (MusicDatabase::classifyFormat(fmt, path) != chipmachine::OTHER)
-            continue;
-        std::string name = trim(fmt);
-        if (name.empty()) name = "Unknown";
-        byName[name]++;
         total++;
+        if (MusicDatabase::classifyFormat(fmt, path) != UNKNOWN_FORMAT) continue;
+        unknown++;
+        byFormat[fmt.empty() ? "<empty>" : fmt]++;
+        auto e = utils::toLower(utils::path_extension(path));
+        extOf[e.empty() ? "<none>" : e]++;
     }
-
-    std::vector<std::pair<std::string, int>> rows(byName.begin(), byName.end());
+    std::vector<std::pair<std::string, int>> rows(byFormat.begin(), byFormat.end());
     std::sort(rows.begin(), rows.end(),
               [](auto const& a, auto const& b) { return a.second > b.second; });
-
-    printf("\n--- OTHER PLATFORMS (%d groups, %d songs) ---\n",
-           (int)rows.size(), total);
+    printf("\n--- SONGS REACHING NO PLATFORM FILTER: %d of %d ---\n", unknown, total);
     for (auto const& [name, n] : rows)
-        printf("%6d  %s\n", n, name.c_str());
+        if (n > 1) printf("%6d  format=\"%s\"\n", n, name.c_str());
+    std::vector<std::pair<std::string, int>> es(extOf.begin(), extOf.end());
+    std::sort(es.begin(), es.end(),
+              [](auto const& a, auto const& b) { return a.second > b.second; });
+    printf("  -- by extension --\n");
+    for (auto const& [e, n] : es)
+        if (n > 1) printf("%6d  .%s\n", n, e.c_str());
     printf("------------------------------\n");
+}
+
+// The Virtual Platforms family: a byte-less 2nd level inside the Other drill.
+// Drives the real browse path (setFormatFilter -> search("") -> getSongInfo) to
+// prove: the top menu shows one "Virtual Platforms" PARENT row (othergroup:: path,
+// aggregate count) and no bare TIC-80/PICO-8/MicroW8; entering it lists exactly
+// those children (otherplatform:: paths); the counts add up and nothing is lost.
+TEST_CASE("virtual platforms family nests inside Other", "[database]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    REQUIRE(mdb.initFromLua("."));
+
+    // The three fantasy consoles are children of the family, never top rows.
+    static const std::set<std::string> kids = { "TIC-80", "PICO-8", "MicroW8" };
+
+    mdb.setFormatFilter({ (uint8_t)OTHER });
+    std::vector<int> res;
+    mdb.search("", res, 100000);
+
+    // Top level: exactly one family parent, and none of its children bare.
+    int parentIdx = -1, parentCount = 0;
+    for (int idx : res) {
+        auto s = mdb.getSongInfo(idx);
+        REQUIRE(kids.count(s.title) == 0); // children are hidden under the parent
+        if (utils::startsWith(s.path, "othergroup::")) {
+            REQUIRE(s.title == "Virtual / Fantasy Platforms / Consoles");
+            parentIdx = idx;
+            parentCount = mdb.otherPlatformSongCount(idx - MusicDatabase::OTHER_PLATFORM_INDEX);
+        }
+    }
+    REQUIRE(parentIdx >= 0); // the family parent is present at the top level
+
+    // Enter the family: the menu now lists exactly the three children as their
+    // own drillable (otherplatform::) rows, and their counts sum to the parent's.
+    mdb.setOtherParent(parentIdx - MusicDatabase::OTHER_PLATFORM_INDEX);
+    std::vector<int> children;
+    mdb.search("", children, 100000);
+    std::set<std::string> got;
+    int childSum = 0;
+    for (int idx : children) {
+        auto s = mdb.getSongInfo(idx);
+        REQUIRE(utils::startsWith(s.path, "otherplatform::"));
+        got.insert(s.title);
+        childSum += mdb.otherPlatformSongCount(idx - MusicDatabase::OTHER_PLATFORM_INDEX);
+    }
+    REQUIRE(got == kids);
+    REQUIRE(childSum == parentCount);
+}
+
+TEST_CASE("other_platforms", "[.]")
+{
+    using namespace chipmachine;
+    RemoteLoader rl;
+    MusicDatabase mdb{ rl };
+    // The app's own startup path: loads db.lua + the cached index, which is what
+    // populates the in-memory `formats` vector buildSubPlatforms reads. Only
+    // reindexes if db.lua's VERSION moved, exactly as the app does.
+    REQUIRE(mdb.initFromLua("."));
+
+    // Both drills share otherPlatformList -- getOtherPlatformCount() /
+    // getArcadePlatformCount() just flip subPlatformByte and rebuild it.
+    auto dump = [&](const char* title, int groups) {
+        int total = 0;
+        std::vector<std::pair<std::string, int>> rows;
+        for (auto const& [gid, name] : mdb.otherPlatforms()) {
+            int n = mdb.otherPlatformSongCount(gid);
+            // A family PARENT (e.g. "Virtual Platforms") aggregates its children,
+            // so mark it and skip its count -- the children are listed separately
+            // and already contribute to the total.
+            bool fam = mdb.isOtherFamilyRow(gid);
+            rows.emplace_back(fam ? ("[" + name + "]") : name, n);
+            if (!fam) total += n;
+        }
+        std::sort(rows.begin(), rows.end(),
+                  [](auto const& a, auto const& b) { return a.second > b.second; });
+        printf("\n--- %s (%d top rows, %d songs) ---\n", title, groups, total);
+        for (auto const& [name, n] : rows)
+            printf("%6d  %s\n", n, name.c_str());
+        printf("------------------------------\n");
+    };
+    dump("OTHER PLATFORMS", mdb.getOtherPlatformCount());
+    dump("ARCADE PLATFORMS", mdb.getArcadePlatformCount());
 }
 
 TEST_CASE("priority_map", "[.]")
@@ -4037,7 +4623,10 @@ TEST_CASE("coverage", "[music]")
         {"NerdTracker2", "testmus/ned"},
         {"SCC-Musixx", "testmus/sccmusixx"},
         {"Sam Coupe (COP)", "testmus/cop"},
-        {"JayTrax", "testmus/jxs"}
+        {"JayTrax", "testmus/jxs"},
+        {"Funktracker", "testmus/fnk"},
+        {"Vic-Tracker", "testmus/victracker"},
+        {"Klystrack Player", "testmus/klystrack"}
     };
 
     // Plugins whose extensions are split across several testmus folders (one

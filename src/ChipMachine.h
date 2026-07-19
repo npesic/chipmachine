@@ -23,6 +23,7 @@
 #include <tween/tween.h>
 
 #include <cstdint>
+#include <random>
 #include <cstdio>
 #include <functional>
 #include <map>
@@ -140,6 +141,23 @@ struct FilterOption {
     // filter but drills into a 2nd-level list of these child options, which
     // themselves apply the filter. Empty for ordinary (leaf) entries.
     std::vector<FilterOption> children;
+    // House logo for a GROUP row, as the basename of an image in
+    // data/misc/platformscreenshots (e.g. "Atari" -> Atari.png). A group has no
+    // format byte of its own, so by default it borrows its first child's logo --
+    // which makes the row look like that one machine. Set this to show the family
+    // mark instead: on the platform screen when the group row is highlighted, and
+    // on the splash.
+    // Also used by ordinary (leaf) entries whose format byte resolves to no
+    // platform-shot slug at all (MP3/OGG/Radio/Podcasts/Other Platforms --
+    // platformSlugForByte's "nonHardware" bytes plus the too-generic "Other"),
+    // since those have neither a byte-slug fallback nor a child to borrow from.
+    // Give such a row its own logo here or it shows nothing when highlighted on
+    // the TAB filter screen (updateFilterLogo). Remember to also add the
+    // basename to splashExcludePlatforms if it isn't real hardware.
+    // The image is OPTIONAL -- a group falls back to the borrowed child logo
+    // rather than failing -- but it IS reported at startup like the other logo
+    // gaps, so it doesn't stay un-drawn just because nothing breaks.
+    std::string logo;
 };
 
 class ChipMachine
@@ -175,12 +193,17 @@ public:
     void update();
     void render(uint32_t delta);
 
+    // Order matters: toast() indexes its colour table with these, and the STICKY
+    // kinds (which stay up until replaced instead of fading) must come last.
     enum ToastType
     {
         WHITE,
         ERROR,
         NORMAL,
-        STICKY
+        STICKY,
+        // Sticky AND saturated red: for a prompt that is asking before doing
+        // something destructive, so it must neither fade nor look routine.
+        STICKY_ALERT
     };
 
     enum Shuffle
@@ -196,16 +219,55 @@ public:
 
     // Draws a spectrum-coloured progress bar (fraction in [0,1]) centred just
     // below the current toast. Shared by the startup DB-indexing screen and the
-    // LOADING/BUFFERING download bar.
-    void drawProgressBar(float frac);
+    // LOADING/BUFFERING download bar. A non-empty `label` is drawn centred in a
+    // smaller, dimmer font just below the bar.
+    void drawProgressBar(float frac, std::string const& label = "");
 
     void setScrolltext(const std::string& txt);
     void shuffleSongs(int what, int limit);
 
     void shuffleFavorites();
+    // Wipes the favorites list and syncs the heart icon. Only ever called once a
+    // pendingFavoritesClear confirmation has been answered with Y.
+    void clearFavorites();
+    // Set while CLEAR FAVORITES LIST waits for its confirmation. The next key
+    // press resolves it -- Y wipes the list, anything else cancels -- and is
+    // swallowed either way, so it cannot also fire its own binding.
+    bool pendingFavoritesClear = false;
+    // Name of the playlist a DEL press (on the Database-filter Playlists screen)
+    // is waiting to delete; empty when nothing is armed. The next key press
+    // resolves it -- Y deletes the file, anything else cancels -- and is
+    // swallowed either way, mirroring pendingFavoritesClear above.
+    std::string pendingPlaylistDelete;
+    // The song a shuffle seeds itself from: the highlighted row while browsing
+    // search results, otherwise whatever is playing.
+    SongInfo shuffleSeed();
+    // True when `composer` is one of the database's markers for "nobody knows who
+    // wrote this" rather than an actual name.
+    static bool isUnknownComposer(std::string const& composer);
     MusicPlayerList& musicPlayer() { return player; }
     void playSongs(std::vector<SongInfo> const& songs);
     void playNamed(const std::string& what) { namedToPlay = what; }
+
+    // The songs of the current shuffle in play order, or empty when the user is
+    // not shuffling. Retained because the play queue is destructive -- a song is
+    // popped off it as it starts -- so this list is the only record of what has
+    // already played, and hence the only way CTRL+LEFT can step back into it.
+    std::vector<SongInfo> shuffleList;
+    // Paths delivered by macOS "Open With" / double-click (Apple Event), drained
+    // from the platform handler at the top of update() and played once the
+    // database is ready. Held as a member so files that arrive during cold-start
+    // indexing survive the early-return frames instead of being dropped.
+    std::vector<std::string> filesToOpen;
+    // Index into shuffleList of the song playing now. Derived from what is left
+    // in the queue rather than counted, so songs the player advances to on its
+    // own (when a tune ends) need no bookkeeping. -1 when not shuffling.
+    int currentShuffleIndex() const;
+    // (Re)start the shuffle at `index`, queueing everything after it.
+    void playShuffleFrom(int index);
+    // The generator behind every shuffle (defined alongside them in
+    // ChipMachine_keys.cpp), shared so each one is drawn from the same stream.
+    static std::mt19937& shuffleRng();
 
 private:
     // Append the now-playing format info ("Platform - Name (EXT) ... <trackers>
@@ -221,6 +283,9 @@ private:
         SEARCH_SCREEN = 1,
         COMMAND_SCREEN = 2,
         ADVANCED_SCREEN = 3,
+        FORMAT_SCREEN = 4,
+        DATABASE_SCREEN = 5,
+        PLUGIN_SCREEN = 6,
     };
 
     static const uint32_t SHIFT = 0x10000;
@@ -258,9 +323,36 @@ private:
                                  15 * advancedHint.scale,
                              advancedTitle.pos.y };
     }
+    // Same treatment for the Formats screen's key hint.
+    void positionFormatHint()
+    {
+        formatHint.scale = formatTitle.scale * 0.65f;
+        formatHint.pos = { formatTitle.pos.x + formatTitle.getWidth() +
+                               15 * formatHint.scale,
+                           formatTitle.pos.y };
+    }
+    // ...and the Databases screen's.
+    void positionDatabaseHint()
+    {
+        databaseHint.scale = databaseTitle.scale * 0.65f;
+        databaseHint.pos = { databaseTitle.pos.x + databaseTitle.getWidth() +
+                                 15 * databaseHint.scale,
+                             databaseTitle.pos.y };
+    }
+    // ...and the Plugins screen's.
+    void positionPluginHint()
+    {
+        pluginHint.scale = pluginTitle.scale * 0.65f;
+        pluginHint.pos = { pluginTitle.pos.x + pluginTitle.getWidth() +
+                               15 * pluginHint.scale,
+                           pluginTitle.pos.y };
+    }
     void updateLists()
     {
         positionAdvancedHint();
+        positionFormatHint();
+        positionDatabaseHint();
+        positionPluginHint();
         int y = resultFieldTemplate.pos.y + (15 * resultFieldTemplate.scale);
         int w = grappix::screen.width() - topLeft.x;
         int h = downRight.y - topLeft.y - y;
@@ -268,6 +360,14 @@ private:
         songList.setArea(grappix::Rectangle(topLeft.x, y, w, h));
         advancedArea = grappix::Rectangle(topLeft.x, y, w, h);
         advancedList.setArea(advancedArea);
+        // The Formats and Databases screens are single scrolling columns over the
+        // same area.
+        formatArea = grappix::Rectangle(topLeft.x, y, w, h);
+        formatList.setArea(formatArea);
+        databaseArea = grappix::Rectangle(topLeft.x, y, w, h);
+        databaseList.setArea(databaseArea);
+        pluginArea = grappix::Rectangle(topLeft.x, y, w, h);
+        pluginList.setArea(pluginArea);
 
         // The help/command screen is one non-scrolling screen, so give it a
         // dedicated, taller area: title nudged up and the list running all the
@@ -321,14 +421,15 @@ private:
         // Command names that begin a new logical group in the help menu: a
         // half-row gap is drawn before each (see renderCommand / matchingGap).
         // Add the first command of a group here to visually separate the sets.
-        static const std::set<std::string> groupBreaks = { 
-            "show_platform_filters",
+        static const std::set<std::string> groupBreaks = {
+            "cycle_platform/format/db/plugin_filters",
             "local_file_playback",
             "play_song",
             "Spectrum_Analyzer_Mode",
-            "add_current_favorite",
-            "next_composer",
-            "random_shuffle",
+            "favor/unfavor_playing_song",
+            "shuffle_all_songs_randomly",
+            // Splits the next/prev steppers off from the shuffle set itself.
+            "next_/_prev_shuffle_song",
         };
         // Only surface commands that have a key binding -- one with an empty
         // shortcut has no way to be triggered, so there is no point listing it.
@@ -380,6 +481,8 @@ private:
     void loadScreenshot(const std::string& shot);
     // Recomputes the centred, half-screen rectangle of the splash icon.
     void updateSplashArea();
+    // Recomputes the centred, half-screen rectangle of the startup icon.
+    void updateStartupIconArea();
     // Builds (once totalSongs is known) and ping-pong-scrolls the splash welcome
     // banner across the top each frame, mirroring the song-title marquee.
     void updateSplashWelcome(uint32_t delta);
@@ -410,6 +513,10 @@ private:
                                                const std::string& format,
                                                std::string* label = nullptr);
 
+    // Platform logo by name, case-insensitively (collections disagree on the
+    // capitalisation of the same platform). nullptr when none is installed.
+    const image::bitmap* findPlatformShot(const std::string& name);
+
     // Refreshes searchLogoIcon with the highlighted song's platform/ext logo,
     // positioned in the screenshot slot. Clears it when no song is selected or
     // no logo exists. Podcast SHOW rows preview their remote artwork instead
@@ -428,6 +535,27 @@ private:
     // logo, centred behind the list. Clears it off the filter screen or when the
     // entry has no hardware platform.
     void updateFilterLogo();
+
+    // Same idea for the Formats screen: the highlighted extension's per-extension
+    // screenshot (else its platform logo), centred behind the list.
+    void updateFormatLogo();
+
+    // ...and the Databases screen: the highlighted collection's modal-platform
+    // logo (or, for a platformless collection like a podcast, its remote artwork
+    // loaded via loadDatabaseArtwork), centred behind the list.
+    void updateDatabaseLogo();
+    // Load a remote collection-artwork URL into databaseLogoIcon asynchronously
+    // (same worker->render-thread handoff as loadSearchArtwork). databaseLogoUrl
+    // tracks the desired image so a late download for a scrolled-past row is
+    // discarded.
+    void loadDatabaseArtwork(const std::string& url);
+
+    // ...and the Plugins screen: the highlighted plugin's modal-platform logo,
+    // centred behind the list.
+    void updatePluginLogo();
+    // Set a bitmap on `icon` and size it to a centred box (half the screen,
+    // aspect-preserving) -- the shared fit used by the filter-screen logos.
+    void centerLogoIcon(Icon& icon, const image::bitmap& bm);
 
     utils::path workDir;
     // Resolved folder the scroller fonts were last loaded from; used to skip a
@@ -500,6 +628,13 @@ private:
     std::atomic<bool> pendingSearchLogo{ false };
     image::bitmap pendingSearchLogoBm;
     std::string pendingSearchLogoUrl;
+    // Same async pipeline for the Databases screen: a podcast (or other
+    // platformless) collection has no hardware logo, so its own artwork is
+    // fetched remotely and uploaded on the render thread.
+    std::string databaseLogoUrl;
+    std::atomic<bool> pendingDatabaseLogo{ false };
+    image::bitmap pendingDatabaseLogoBm;
+    std::string pendingDatabaseLogoUrl;
     // Logo of the highlighted platform/category on the TAB filter screen, drawn
     // dimmed and centred behind the two-column list. Textureless when the
     // highlighted entry has no hardware platform (e.g. "[No Filter]", MP3).
@@ -548,6 +683,61 @@ private:
     // dimmer font (like sourceStatus next to topStatus). Positioned at runtime
     // from advancedTitle's width -- see positionAdvancedHint().
     TextField advancedHint;
+
+    // The Formats screen: a single scrolling column, one row per file extension
+    // ("EXT   count   name"), highest count first. Selecting one restricts search
+    // to that extension (MusicDatabase::setExtensionFilter).
+    RenderSet formatScreen;
+    grappix::VerticalList formatList;
+    grappix::Rectangle formatArea;
+    TextField formatTitle;
+    TextField formatHint;
+    Icon formatLogoIcon; // per-extension logo, centred behind the list
+
+    // Type-to-narrow state for the Formats screen. formatFilterText is the
+    // (lowercased) query the user is typing; a match keeps any group whose
+    // extension OR description name contains it. formatVisibleGroups maps each
+    // shown list row (row 0 is [no filter]; group rows follow) to an index into
+    // MusicDatabase::extensionGroups() -- everything that resolves a row back to
+    // a group (render, logo, ENTER-to-apply) goes through this indirection.
+    std::string formatFilterText;
+    std::vector<int> formatVisibleGroups;
+    // Rebuild formatVisibleGroups from formatFilterText, resize/clamp the list
+    // and refresh the title. Call after any edit to the query or on entry.
+    void rebuildFormatVisible();
+
+    // The Databases screen: same single-column layout, one row per source
+    // collection ("id   count   name"), highest count first. Selecting one
+    // restricts search to that database (MusicDatabase::setDatabaseFilter).
+    RenderSet databaseScreen;
+    grappix::VerticalList databaseList;
+    grappix::Rectangle databaseArea;
+    TextField databaseTitle;
+    TextField databaseHint;
+    Icon databaseLogoIcon; // collection's modal-platform logo, behind the list
+
+    // The Plugins screen: same single-column layout, one row per registered
+    // ChipPlugin ("count   name"), highest count first. Selecting one restricts
+    // search to the songs that plugin claims by extension (MusicDatabase's
+    // setPluginFilter / pluginGroups; see buildPluginGroups for why this is
+    // extension-based rather than canHandle()-based).
+    RenderSet pluginScreen;
+    grappix::VerticalList pluginList;
+    grappix::Rectangle pluginArea;
+    TextField pluginTitle;
+    TextField pluginHint;
+    Icon pluginLogoIcon; // plugin's modal-platform logo, behind the list
+
+    // Type-to-narrow state for the Plugins screen, same shape as the Formats
+    // screen's (see formatFilterText/formatVisibleGroups above): pluginFilterText
+    // is the (lowercased) query; a match keeps any plugin whose name contains it.
+    // pluginVisibleGroups maps each shown list row (row 0 is [no filter]; plugin
+    // rows follow) to an index into MusicDatabase::pluginGroups().
+    std::string pluginFilterText;
+    std::vector<int> pluginVisibleGroups;
+    // Rebuild pluginVisibleGroups from pluginFilterText, resize/clamp the list
+    // and refresh the title. Call after any edit to the query or on entry.
+    void rebuildPluginVisible();
     // Header on the command/help screen (e.g. "ChipMachineAS 1.9 HELP MENU"),
     // drawn above the first entry; hidden while a command filter is being typed.
     TextField commandTitle;
@@ -641,6 +831,11 @@ private:
     bool hasMoved = false;
 
     bool indexingDatabase = false;
+    // Big centred app icon shown from app launch until indexing finishes and
+    // the scroller takes over (see setup()/updateStartupIconArea()/render()).
+    Icon startupIcon;
+    // Fraction of the screen the startup icon fills (per axis, aspect kept).
+    float startupIconSizeFraction = 1.0f;
 
     MusicBars musicBars;
     MusicPlayerList::State playerState;

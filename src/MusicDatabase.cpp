@@ -14,8 +14,9 @@
 #include <xml/xml.h>
 
 #include <algorithm>
-#include <chrono>
+#include <cctype>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <set>
 #include <thread>
@@ -168,8 +169,12 @@ bool MusicDatabase::parseCsdb(
             // LOGD("Screenshot %s", prod.screenshots);
         }
         prod.creator = group;
+        // "C64 Music" is the plain music-release type and the most music-
+        // relevant type CSDb has; only "C64 Music Collection" was matching
+        // here, so 22k releases were parsed and dropped.
         if ((endsWith(prod.type, "Music Collection") ||
-             endsWith(prod.type, "Diskmag") || endsWith(prod.type, "Demo")) &&
+             endsWith(prod.type, "Music") || endsWith(prod.type, "Diskmag") ||
+             endsWith(prod.type, "Demo")) &&
             rt >= 0) {
 
             /*for (auto const& s : i["Sids"].all("HVSCPath")) {
@@ -769,6 +774,11 @@ bool MusicDatabase::parseStandard(
     //  templ = "title game composer format path meta";
     auto format = vars["format"];
     auto composer = vars["composer"];
+    // Collection-level `ext` default, mirroring `format`/`composer` above: used
+    // when the song list has no per-row ext column. Needed by sets whose path is
+    // an opaque id (rko: "5136"), where neither the ext column nor the path can
+    // yield a routing/dedup extension -- see the `ext` note on rko in db.lua.
+    auto defaultExt = vars["ext"];
     int columns = 2;
     if (templ != "") {
         formatIndex = gameIndex = composerIndex = extIndex = -1;
@@ -912,10 +922,42 @@ bool MusicDatabase::parseStandard(
             // playback/scroll paths -- without the RSS `type = "podcast"` parser.
             if (vars["podcast"] == "yes") formatField = "Podcast";
 
+            // ZX Spectrum AY label normalization. zxart tags every AY tune with
+            // the coarse platform string "Spectrum AY", while modland carries the
+            // specific tracker name for the same files (e.g. .stc -> "ST Song
+            // Compiler", .pt3 -> "Pro Tracker 3"). That split made one tune surface
+            // under two Format buckets / two "Format:" headers. Re-specialize the
+            // coarse label by REAL EXT so both sources collapse onto one canonical
+            // name. ALLOWLIST only: exts NOT listed (ogg render fallbacks, the .ay
+            // container, .psg register dumps, .tfe, ambiguous .psm) stay
+            // "Spectrum AY". Every canonical name already maps to ZXAY in
+            // formatToByte's format_map, so the platform byte / F9 filter is
+            // unchanged. Guarded on the exact "Spectrum AY" string, so modland's
+            // own specific labels are never touched.
+            if (formatField == "Spectrum AY") {
+                static const std::map<std::string, std::string> zxAyByExt = {
+                    {"pt1", "Pro Tracker 1"},   {"pt2", "Pro Tracker 2"},
+                    {"pt3", "Pro Tracker 3"},   {"asc", "ASC Sound Master"},
+                    {"stc", "ST Song Compiler"},{"stp", "Sound Tracker Pro"},
+                    {"stp2", "Sound Tracker Pro 2"},
+                    {"st11", "Sound Tracker 1.1"}, {"st13", "Sound Tracker 1.3"},
+                    {"sqt", "SQ Tracker"},      {"psc", "Pro Sound Creator"},
+                    {"vtx", "Vortex"},          {"vt2", "Vortex Tracker II"},
+                    {"ftc", "Fast Tracker"},    {"fxm", "Fuxoft AY Language"},
+                    {"chi", "Chip Tracker"},    {"gtr", "Global Tracker"},
+                };
+                std::string zxExt =
+                    toLower(extIndex >= 0 && (int)parts.size() > extIndex
+                                ? parts[extIndex]
+                                : defaultExt);
+                auto it = zxAyByExt.find(zxExt);
+                if (it != zxAyByExt.end()) formatField = it->second;
+            }
+
             if (!unexotica) {
                 song = SongInfo(parts[pathIndex], gameField, titleField,
                                 composerField, formatField, metadata,
-                                extIndex >= 0 ? parts[extIndex] : "");
+                                extIndex >= 0 ? parts[extIndex] : defaultExt);
                 // `screenshot` template column -> per-song artwork stored verbatim
                 // (a full URL, e.g. an img.youtube.com thumbnail). Flows through
                 // the song.artwork DB column and is used directly by
@@ -958,7 +1000,7 @@ bool MusicDatabase::parseStandard(
                 flush();
                 cur = SongInfo(parts[pathIndex], "", singleTitle, composerField,
                                formatField, metadata,
-                               extIndex >= 0 ? parts[extIndex] : "");
+                               extIndex >= 0 ? parts[extIndex] : defaultExt);
                 curValid = true;
                 groupGame = gameField;
                 groupComposer = composerField;
@@ -970,9 +1012,20 @@ bool MusicDatabase::parseStandard(
     return true;
 }
 
-// The extension a song path would route on, lowercased and without the leading
-// dot, for matching against the not_supported_extensions list. Handles MULTI:
-// groups (the first member decides) and URL query strings (".ay?x" -> "ay").
+// The extension a single (non-MULTI) path routes on, lowercased and without the
+// leading dot, for matching against the not_supported_extensions list. Handles
+// URL query strings (".ay?x" -> "ay").
+static std::string pathExtension(std::string const& p)
+{
+    auto ext = toLower(utils::path_extension(p));
+    auto q = ext.find('?');
+    if (q != std::string::npos) ext = ext.substr(0, q);
+    return ext;
+}
+
+// The extension a song path would route on. MULTI: groups are decided by their
+// first member -- see songIsUnsupported() for why the skip gate does NOT use
+// this for them.
 static std::string routingExtension(std::string p)
 {
     if (startsWith(p, "MULTI:")) {
@@ -980,10 +1033,126 @@ static std::string routingExtension(std::string p)
         auto tab = p.find('\t');
         if (tab != std::string::npos) p = p.substr(0, tab);
     }
-    auto ext = toLower(utils::path_extension(p));
+    return pathExtension(p);
+}
+
+// The extension a *song* actually routes on. An `ext` template column overrides
+// the path: those collections carry the real format there and the path can't be
+// parsed for it -- modarchive/zophar/vgmrips paths end in ".zip", and an amp
+// path is a bare module id ("152352") with no dot at all. Matching only the path
+// (as the gate first did) left the not_supported_extensions list unenforceable
+// for ~237k songs, i.e. ~31% of the index: a line added for any amp/modarchive/
+// zophar format would look right and silently drop nothing. The column is stored
+// verbatim from the list file, so it arrives mixed-case ("MOD" vs "mod") and
+// needs the same normalization as a path extension.
+static std::string routingExtension(SongInfo const& song)
+{
+    if (song.ext.empty()) return routingExtension(song.path);
+    auto ext = toLower(song.ext);
+    auto a = ext.find_first_not_of(" \t");
+    if (a == std::string::npos) return routingExtension(song.path);
+    auto b = ext.find_last_not_of(" \t");
+    ext = ext.substr(a, b - a + 1);
+    if (ext[0] == '.') ext.erase(0, 1);
     auto q = ext.find('?');
     if (q != std::string::npos) ext = ext.substr(0, q);
-    return ext;
+    return ext.empty() ? routingExtension(song.path) : ext;
+}
+
+// A .prg whose target machine we cannot emulate.
+//
+// .prg is a bare Commodore executable: the first two bytes are its load address
+// and nothing else says which machine it is for. We decode .prg with ONE engine,
+// tedplay (TEDPlugin), which emulates the TED chip -- Commodore 16/116/plus4 --
+// and its canHandle takes any ".prg" on extension alone. Demozoo carries three
+// tunes built for machines we have no emulator for at all: two Commodore VIC-20
+// (sound on the VIC chip) and one Commodore PET (no sound chip; a PIA-driven
+// beeper).
+//
+// They do not fail, they play SILENCE, which is worse. Plus/4 BASIC starts at
+// $1001 -- the SAME address as an unexpanded VIC-20 -- so tedplay accepts the
+// VIC-20 files as plausible TED programs, runs them, and their writes to the
+// VIC chip at $900x land on hardware a TED machine does not have. The PET file
+// ($0401) is run as garbage. Nothing reaches the sound chip either way.
+//
+// That $1001 collision is also why this CANNOT be a content check on the load
+// address, and why .prg cannot go in not_supported_extensions.txt: 1364 indexed
+// rows route on .prg (1238 TED, 126 C64) and play fine. The DB format string is
+// the only thing that separates them, so match on it -- EXACTLY, never as a
+// substring: "Youtube (VIC 20)" and "Youtube (Commodore PET)" are 96 rows of
+// perfectly playable video captures that must stay.
+//
+// To lift this you would build VICE's vendored-but-unbuilt xvic/xpet cores, not
+// extend tedplay. See db.lua v118 for why that was judged not worth it.
+//
+// REVISITED 2026-07-17 after victrackerplugin shipped (fake6502 + the VIC-I
+// sound core). It does NOT make these trivial -- .vt worked because we had the
+// replayer SOURCE and could call pl_Play per frame, skipping ROMs/VIA/CPU timing.
+// A .prg is a whole machine. Disassembling the three (all BASIC-SYS + ML):
+//   - fabod.prg (VIC-20, Zapac): clean VIA-timer IRQ player, writes $900A/$900E
+//     directly -> the ONLY one a per-frame-IRQ shortcut could play.
+//   - intercooler.prg (VIC-20, Aleksi Eeben): the marquee tune, and it has ZERO
+//     static references to $900x -- its entry relocates the playroutine into
+//     zeropage/RAM (LDA $1042,x / STA $00F6,x) and drives sound from there. That
+//     is the signature of a cycle-exact digi/PWM player; a per-frame model can't
+//     reproduce it -- it needs a cycle-accurate CPU+VIC, i.e. xvic.
+//   - dalezy PET tune: a different machine -- 1-bit beeper toggling the 6522 VIA
+//     CB2 line at $E84x (28 refs), needs cycle-accurate CB2 capture + PET ROM.
+// So 2 of 3 need full machine emulation the .vt path deliberately avoids, across
+// two machines, for one reliably-playable song (fabod). Still parked; the gate
+// stays. See memory [[unemulated-vic20-pet-prg-parked]].
+static bool prgForUnemulatedMachine(SongInfo const& song)
+{
+    static const std::set<std::string> unemulated = {
+        "commodore vic-20",
+        "commodore pet",
+    };
+    return unemulated.count(toLower(song.format)) > 0 &&
+           routingExtension(song) == "prg";
+}
+
+// Should this song be dropped from the index because we have no decoder for it?
+//
+// A MULTI: group is one GUI entry backed by several files, and its members are
+// not interchangeable: a group routinely LEADS with a companion (a sample bank,
+// a shared lib, a stale backup) and carries the real tunes after it, e.g.
+//   MULTI:Quartet ST/<artist>/<game>/SMP.set  <tab> ....4v <tab> ....4v
+//   MULTI:Playstation 2 Sound Format/.../<x>.psf2lib <tab> ....minipsf2
+//   MULTI:IFF-SMUS/Dr. Awesome/Awesome-3/Awesome-3.SMUS.bak <tab> ....smus
+// So judging a group by its first member (what routingExtension does) would drop
+// the whole group -- 451 playable songs across .set/.psf2lib/.bak alone -- the
+// moment a companion extension is listed. Only skip a group when EVERY member is
+// unsupported; one playable member keeps the entry. Standalone companion rows
+// (the 149 bare "*.set" tunes-that-aren't) still match and are dropped, which is
+// the point of listing them.
+static bool songIsUnsupported(SongInfo const& song,
+                              std::set<std::string> const& unsupported)
+{
+    // Format-scoped, so it stands apart from the extension list below and is not
+    // gated on that list being loaded.
+    if (prgForUnemulatedMachine(song)) return true;
+    if (unsupported.empty()) return false;
+    // An `ext` template column names the format outright; it wins over the path
+    // for both plain rows and groups.
+    if (!song.ext.empty()) return unsupported.count(routingExtension(song)) > 0;
+    if (!startsWith(song.path, "MULTI:")) {
+        return unsupported.count(routingExtension(song.path)) > 0;
+    }
+    bool any = false;
+    std::string const members = song.path.substr(6);
+    size_t pos = 0;
+    while (pos <= members.size()) {
+        auto tab = members.find('\t', pos);
+        auto end = (tab == std::string::npos) ? members.size() : tab;
+        auto member = members.substr(pos, end - pos);
+        if (!member.empty()) {
+            any = true;
+            if (unsupported.count(pathExtension(member)) == 0) return false;
+        }
+        if (tab == std::string::npos) break;
+        pos = tab + 1;
+    }
+    return any;
 }
 
 void MusicDatabase::initDatabase(utils::path const& workDir, Variables& vars)
@@ -1014,6 +1183,7 @@ void MusicDatabase::initDatabase(utils::path const& workDir, Variables& vars)
 
     reindexNeeded = true;
     reindexingNow.store(true, std::memory_order_relaxed);
+    setIndexingName(id);
 
     if (!local_dir.empty()) {
         if (!local_dir.is_absolute()) local_dir = workDir / local_dir;
@@ -1139,10 +1309,7 @@ void MusicDatabase::initDatabase(utils::path const& workDir, Variables& vars)
                 // data/misc/not_supported_extensions.txt: we have no decoder for
                 // them, so indexing them only yields broken GUI entries that
                 // download then can't play.
-                if (!unsupportedExts.empty() &&
-                    unsupportedExts.count(routingExtension(song.path)) > 0) {
-                    return;
-                }
+                if (songIsUnsupported(song, unsupportedExts)) { return; }
                 query
                     .bind(song.title, song.game, song.composer, song.format,
                           song.path, collection_id,
@@ -1246,6 +1413,44 @@ static uint8_t productTypeToPlatform(std::string const& type)
     return 0;
 }
 
+void MusicDatabase::buildTitleRank()
+{
+    uint32_t n = titleIndex.size();
+    if (n == 0) {
+        titleRank.clear();
+        return;
+    }
+    std::vector<std::pair<std::string, int>> keyed;
+    keyed.reserve(n);
+    for (uint32_t i = 0; i < n; i++)
+        keyed.emplace_back(toLower(titleIndex.getString(i)), (int)i);
+    std::sort(keyed.begin(), keyed.end(),
+              [](auto const& a, auto const& b) { return a.first < b.first; });
+    titleRank.assign(n, 0);
+    for (uint32_t r = 0; r < n; r++) titleRank[keyed[r].second] = r;
+}
+
+void MusicDatabase::sortCandidatesByTitle(std::vector<int>& cands)
+{
+    // Fast path: sort by the precomputed alphabetical rank (plain int compares).
+    // Valid only when the rank covers every candidate -- a live podcast append
+    // can grow titleIndex past a rank built at startup, in which case we fall
+    // back rather than index out of bounds.
+    if (titleRank.size() >= titleIndex.size() && !titleRank.empty()) {
+        std::sort(cands.begin(), cands.end(),
+                  [this](int a, int b) { return titleRank[a] < titleRank[b]; });
+        return;
+    }
+    // Fallback: build each key once (decorate-sort-undecorate).
+    std::vector<std::pair<std::string, int>> keyed;
+    keyed.reserve(cands.size());
+    for (int i : cands)
+        keyed.emplace_back(toLower(titleIndex.getString(i)), i);
+    std::sort(keyed.begin(), keyed.end(),
+              [](auto const& a, auto const& b) { return a.first < b.first; });
+    for (size_t k = 0; k < cands.size(); k++) cands[k] = keyed[k].second;
+}
+
 void MusicDatabase::setFormatFilter(std::vector<uint8_t> const& allowedFormats)
 {
     filterHueRank.clear();
@@ -1263,6 +1468,12 @@ void MusicDatabase::setFormatFilter(std::vector<uint8_t> const& allowedFormats)
                           allowedFormats[0] == ARCADE));
     if (otherFilterActive) subPlatformByte = allowedFormats[0];
     otherPlatformFilter = -1;
+    otherParentFilter = -1;
+    // The platform, extension, and database filters share the single title-index
+    // predicate slot, so activating one clears the others' state.
+    extensionFilterGid = -1;
+    databaseFilterRowid = -1;
+    pluginFilterGid = -1;
     if (allowedFormats.empty()) {
         titleIndex.setFilter();
         formatFilterActive = false;
@@ -1308,6 +1519,13 @@ void MusicDatabase::setFormatFilter(std::vector<uint8_t> const& allowedFormats)
         for (uint16_t h : hues) filterHueRank[h] = rank++;
         filterHueCount = (int)hues.size();
 
+        // Pre-sort the candidates alphabetically by title so the empty-query
+        // "list all" path (and short queries) just slice them -- no per-keystroke
+        // sort, no size cap. Skip the podcast/other browses: they have their own
+        // ordering (feed order / their own re-sort) and don't use this order.
+        if (!podcastFilterActive && !otherFilterActive)
+            sortCandidatesByTitle(filteredCandidates);
+
         // Build the podcast show list (distinct collections among the podcast
         // episodes), names from the collection table, sorted alphabetically.
         if (podcastFilterActive) {
@@ -1330,6 +1548,508 @@ void MusicDatabase::setFormatFilter(std::vector<uint8_t> const& allowedFormats)
         // Build the sub-platform grouping for the active byte (OTHER / ARCADE).
         if (otherFilterActive) buildSubPlatforms();
     }
+}
+
+void MusicDatabase::buildExtensionGroups()
+{
+    // Serialize the whole build: the async precompute worker and a racing lazy
+    // GUI call (extensionGroups()/setExtensionFilter) both funnel through here,
+    // and only one may scan + publish. Whoever loses the race sees the flag set
+    // and returns immediately.
+    std::lock_guard<std::mutex> lk{ extGroupsMutex };
+    if (extensionGroupsBuilt.load(std::memory_order_acquire)) return;
+
+    // Songs occupy [0, productStartIndex); products carry no real extension.
+    uint32_t n = (productStartIndex > 0 &&
+                  productStartIndex <= (uint32_t)formats.size())
+                     ? productStartIndex
+                     : (uint32_t)formats.size();
+    if (n == 0) return; // not indexed yet -- retry on the next call
+
+    // Build into LOCAL containers and publish at the end, so the GUI thread never
+    // observes a half-filled extGroupOf / extensionGroupList.
+    std::vector<ExtGroup> groupList;
+    std::vector<int16_t> groupOf(n, -1);
+
+    // This runs on a worker thread (see precomputeBrowseListsAsync), so it must
+    // NOT touch the shared member `db` -- getSongInfo() queries that connection
+    // from the GUI thread without a lock. Use a private connection to the same
+    // file, the pattern otherDrillNames()/screenshotDb already use.
+    sqlite3db::Database scanDb{
+        (Environment::getCacheDir() / "music.db").string()
+    };
+
+    // One scan: resolve each song's real extension (container-stripped, etc.),
+    // tallying count, the songs' indices, and the most common DB format string
+    // (a name fallback for undescribed extensions). Search index i maps to
+    // song.ROWID i+1 (contiguous; see getSongInfo / buildSubPlatforms).
+    struct Acc
+    {
+        int count = 0;
+        std::vector<int> idxs;
+        std::unordered_map<std::string, int> fmts; // DB format string -> count
+    };
+    std::unordered_map<std::string, Acc> byExt;
+
+    auto q = scanDb.query<int, std::string, std::string, std::string>(
+        "SELECT ROWID, ext, path, format FROM song");
+    while (q.step()) {
+        int rowid;
+        std::string ext, path, fmt;
+        tie(rowid, ext, path, fmt) = q.get_tuple();
+        int i = rowid - 1;
+        if (i < 0 || i >= (int)n) continue;
+        SongInfo si;
+        si.path = path;
+        si.ext = ext;
+        si.format = fmt;
+        std::string e = resolveExtension(si);
+        if (e.empty()) continue;
+        auto& a = byExt[e];
+        a.count++;
+        a.idxs.push_back(i);
+        if (!fmt.empty()) a.fmts[fmt]++;
+    }
+
+    // A token that could be a real extension: short, and only [a-z0-9_-]. Keeps
+    // song-name fragments resolveExtension() mistakes for extensions ("song
+    // (stripped)", "dinosaurdetective jingle2") out of the list unless they are
+    // actually described. The length cap is 8, not 6, so real PSF-family formats
+    // (mini2sf/miniusf/minidsf/minissf/psf2lib/minipsf2) are admitted; the junk
+    // is excluded by the character test (it always carries spaces/parens), not
+    // the length.
+    auto cleanToken = [](std::string const& e) {
+        if (e.empty() || e.size() > 8) return false;
+        for (char c : e)
+            if (!(std::isalnum((unsigned char)c) || c == '-' || c == '_'))
+                return false;
+        return true;
+    };
+
+    // Admit described extensions always; undescribed ones only when they clear
+    // the size bar and look like a real token.
+    std::vector<std::pair<std::string, Acc*>> admitted;
+    for (auto& kv : byExt) {
+        bool described = !describeExtension(kv.first).empty();
+        if (described ||
+            (kv.second.count >= kExtGroupMinSongs && cleanToken(kv.first)))
+            admitted.emplace_back(kv.first, &kv.second);
+    }
+    // Highest count first; ties alphabetical so the order is stable.
+    std::sort(admitted.begin(), admitted.end(), [](auto const& a, auto const& b) {
+        if (a.second->count != b.second->count)
+            return a.second->count > b.second->count;
+        return a.first < b.first;
+    });
+
+    for (int gid = 0; gid < (int)admitted.size(); gid++) {
+        std::string const& e = admitted[gid].first;
+        Acc& a = *admitted[gid].second;
+        // Most common DB format string: the name fallback for undescribed
+        // extensions AND the signal for the row's platform colour.
+        std::string modal;
+        int best = -1;
+        for (auto const& f : a.fmts)
+            if (f.second > best) {
+                best = f.second;
+                modal = f.first;
+            }
+        std::string name = extensionName(e);
+        // .mod's description name lists six trackers (87 chars) -- too long for
+        // the screen's name column. Use a compact one-off stand-in here only; the
+        // now-playing scroller still shows the full list via describeExtension().
+        if (e == "mod") name = "Sound-/Noise-/Pro-Tracker, etc.";
+        if (name.empty()) name = modal;
+        // Colour the row like the platform screens do: classify the modal format
+        // string (the richer signal), falling back to the bare extension.
+        uint8_t plat = classifyFormat(!modal.empty() ? modal : e, "");
+        groupList.push_back({ e, name, a.count, plat });
+        for (int i : a.idxs) groupOf[i] = (int16_t)gid;
+    }
+
+    // Publish. The store (release) pairs with the acquire-load in
+    // extensionGroups()/buildExtensionGroups(), and both reads of the vectors on
+    // the GUI side happen only after that flag reads true, so they see the fully
+    // built lists. (extGroupsMutex acquire/release provides the same barrier for
+    // the lazy path that funnels back through buildExtensionGroups().)
+    extensionGroupList = std::move(groupList);
+    extGroupOf = std::move(groupOf);
+    extensionGroupsBuilt.store(true, std::memory_order_release);
+}
+
+std::vector<MusicDatabase::ExtGroup> const& MusicDatabase::extensionGroups()
+{
+    if (!extensionGroupsBuilt.load(std::memory_order_acquire))
+        buildExtensionGroups();
+    return extensionGroupList;
+}
+
+void MusicDatabase::precomputeBrowseListsAsync()
+{
+    // The Database list is cheap (~5ms: in-memory formats[] + a tiny collection
+    // query on the shared `db`); build it inline on the caller (GUI) thread.
+    databaseGroups();
+
+    // Spawn extension group build
+    if (!extensionGroupsBuilt.load(std::memory_order_acquire) && !extGroupsFuture.valid()) {
+        // Pre-warm the lazily-loaded description tables HERE, on the GUI thread, so
+        // the worker only ever reads them. describeExtension() fills the shared
+        // formatDescriptions/formatNames maps on first call; extensionName() shares
+        // that load. Doing it now avoids a data race with GUI callers (the
+        // now-playing scroller also calls describeExtension()).
+        describeExtension("");
+
+        // Scan the song table on a worker thread (own DB connection) so the ~360ms
+        // build never stalls the render loop -- the starfield keeps scrolling.
+        extGroupsFuture = std::async(std::launch::async, [this] {
+            buildExtensionGroups();
+        });
+    }
+
+    // Spawn plugin group build
+    if (!pluginGroupsBuilt.load(std::memory_order_acquire) && !pluginGroupsFuture.valid()) {
+        pluginGroupsFuture = std::async(std::launch::async, [this] {
+            buildPluginGroups();
+        });
+    }
+}
+
+std::vector<MusicDatabase::PluginGroup> const& MusicDatabase::pluginGroups()
+{
+    if (!pluginGroupsBuilt.load(std::memory_order_acquire))
+        buildPluginGroups();
+    return pluginGroupList;
+}
+
+void MusicDatabase::setPluginFilter(int gid)
+{
+    podcastFilterActive = false;
+    podcastShowFilter = -1;
+    podcastShowList.clear();
+    otherFilterActive = false;
+    otherPlatformFilter = -1;
+    filterHueRank.clear();
+    filterHueCount = 0;
+    extensionFilterGid = -1;
+    databaseFilterRowid = -1;
+    pluginFilterGid = gid;
+
+    if (gid < 0) {
+        titleIndex.setFilter();
+        formatFilterActive = false;
+        filteredCandidates.clear();
+        filteredCandidates.shrink_to_fit();
+        return;
+    }
+
+    if (!pluginGroupsBuilt.load(std::memory_order_acquire))
+        buildPluginGroups();
+
+    titleIndex.setFilter([=](int index) {
+        if (index < 0 || index >= (int)pluginGroupOf.size()) return true; // exclude
+        return pluginGroupOf[index] != (int16_t)gid;                      // keep == gid
+    });
+
+    formatFilterActive = true;
+    filteredCandidates.clear();
+    uint32_t n = titleIndex.size();
+    std::set<uint16_t> hues;
+    for (uint32_t i = 0; i < n; i++) {
+        if (titleIndex.isFiltered(i)) continue;
+        filteredCandidates.push_back(i);
+        if (i < productStartIndex) hues.insert(formatHue[i]);
+    }
+    int rank = 0;
+    for (uint16_t h : hues) filterHueRank[h] = rank++;
+    filterHueCount = (int)hues.size();
+
+    sortCandidatesByTitle(filteredCandidates);
+}
+
+void MusicDatabase::buildPluginGroups()
+{
+    std::lock_guard<std::mutex> lk{ pluginGroupsMutex };
+    if (pluginGroupsBuilt.load(std::memory_order_acquire)) return;
+
+    uint32_t n = (productStartIndex > 0 &&
+                  productStartIndex <= (uint32_t)formats.size())
+                     ? productStartIndex
+                     : (uint32_t)formats.size();
+    if (n == 0) return;
+
+    std::vector<PluginGroup> groupList;
+    std::vector<int16_t> groupOf(n, -1);
+
+    sqlite3db::Database scanDb{
+        (Environment::getCacheDir() / "music.db").string()
+    };
+
+    auto& plugins = musix::ChipPlugin::getPlugins();
+
+    // Extension -> plugin index, first (highest-priority) claimer wins -- the
+    // same resolution order MusicPlayer::fromFile() uses (getPlugins() is
+    // priority-sorted; see ChipPlugin::createPlugins). Deliberately extension-
+    // only, NOT canHandle(): some plugins (e.g. MikModPlugin for .uni)
+    // disambiguate by magic bytes, opening and reading the actual file --
+    // catalog paths here are mostly remote/uncached, so calling canHandle()
+    // against every song crashes on the first uncached magic-gated file.
+    std::unordered_map<std::string, int> extToPlugin;
+    for (int pIdx = 0; pIdx < (int)plugins.size(); pIdx++) {
+        for (auto const& rawExt : plugins[pIdx]->getSupportedExtensions()) {
+            extToPlugin.emplace(toLower(rawExt), pIdx); // first wins
+        }
+    }
+
+    std::vector<int> counts(plugins.size(), 0);
+    std::vector<std::vector<int>> idxs(plugins.size());
+    std::vector<std::unordered_map<uint8_t, int>> formatTallies(plugins.size());
+
+    auto q = scanDb.query<int, std::string, std::string, std::string>(
+        "SELECT ROWID, ext, path, format FROM song");
+    while (q.step()) {
+        int rowid;
+        std::string ext, path, fmt;
+        tie(rowid, ext, path, fmt) = q.get_tuple();
+        int i = rowid - 1;
+        if (i < 0 || i >= (int)n) continue;
+
+        // resolveExtension() strips containers/prefix-forms the same way
+        // extensionGroups() does, so a song lands under the same extension here
+        // as it does on the Formats screen.
+        SongInfo si;
+        si.path = path;
+        si.ext = ext;
+        si.format = fmt;
+        std::string e = resolveExtension(si);
+        if (e.empty()) continue;
+
+        auto it = extToPlugin.find(e);
+        if (it == extToPlugin.end()) continue;
+        int pIdx = it->second;
+        counts[pIdx]++;
+        idxs[pIdx].push_back(i);
+        uint8_t plat = classifyFormat(fmt, "");
+        formatTallies[pIdx][plat]++;
+    }
+
+    struct AdmittedPlugin {
+        std::string name;
+        int pluginIdx;
+        int count;
+        uint8_t platform;
+        std::vector<int> songIdxs;
+    };
+    std::vector<AdmittedPlugin> admitted;
+    for (int pIdx = 0; pIdx < (int)plugins.size(); pIdx++) {
+        if (counts[pIdx] > 0) {
+            uint8_t modal = 0;
+            int best = -1;
+            for (auto const& b : formatTallies[pIdx]) {
+                if (b.second > best) {
+                    best = b.second;
+                    modal = b.first;
+                }
+            }
+            admitted.push_back({ plugins[pIdx]->name(), pIdx, counts[pIdx], modal, std::move(idxs[pIdx]) });
+        }
+    }
+
+    std::sort(admitted.begin(), admitted.end(), [](auto const& a, auto const& b) {
+        if (a.count != b.count) return a.count > b.count;
+        return a.name < b.name;
+    });
+
+    for (int gId = 0; gId < (int)admitted.size(); gId++) {
+        auto& adm = admitted[gId];
+        groupList.push_back({ adm.name, adm.pluginIdx, adm.count, adm.platform });
+        for (int i : adm.songIdxs) {
+            groupOf[i] = (int16_t)gId;
+        }
+    }
+
+    pluginGroupList = std::move(groupList);
+    pluginGroupOf = std::move(groupOf);
+    pluginGroupsBuilt.store(true, std::memory_order_release);
+}
+
+void MusicDatabase::setExtensionFilter(int gid)
+{
+    // Reset the sibling browse states, exactly as setFormatFilter does -- only
+    // one filter drives the title index at a time.
+    podcastFilterActive = false;
+    podcastShowFilter = -1;
+    podcastShowList.clear();
+    otherFilterActive = false;
+    otherPlatformFilter = -1;
+    filterHueRank.clear();
+    filterHueCount = 0;
+    extensionFilterGid = gid;
+    databaseFilterRowid = -1;
+    pluginFilterGid = -1;
+
+    if (gid < 0) {
+        titleIndex.setFilter();
+        formatFilterActive = false;
+        filteredCandidates.clear();
+        filteredCandidates.shrink_to_fit();
+        return;
+    }
+
+    if (!extensionGroupsBuilt.load(std::memory_order_acquire))
+        buildExtensionGroups();
+
+    titleIndex.setFilter([=](int index) {
+        // Products (and anything past the song range) carry no extension group.
+        if (index < 0 || index >= (int)extGroupOf.size()) return true; // exclude
+        return extGroupOf[index] != (int16_t)gid;                      // keep == gid
+    });
+
+    // Same filtered-candidate + hue precompute as setFormatFilter, so short
+    // queries and the even-hue colouring work identically under an ext filter.
+    formatFilterActive = true;
+    filteredCandidates.clear();
+    uint32_t n = titleIndex.size();
+    std::set<uint16_t> hues;
+    for (uint32_t i = 0; i < n; i++) {
+        if (titleIndex.isFiltered(i)) continue;
+        filteredCandidates.push_back(i);
+        if (i < productStartIndex) hues.insert(formatHue[i]);
+    }
+    int rank = 0;
+    for (uint16_t h : hues) filterHueRank[h] = rank++;
+    filterHueCount = (int)hues.size();
+
+    // Pre-sort so the empty-query "list all" path just slices (see setFormatFilter).
+    sortCandidatesByTitle(filteredCandidates);
+}
+
+int MusicDatabase::playlistsCollectionRowid()
+{
+    if (playlistsCollRowid != -2) return playlistsCollRowid;
+    playlistsCollRowid = -1;
+    try {
+        auto q = db.query<int, std::string, std::string>(
+            "SELECT ROWID, id, name FROM collection");
+        while (q.step()) {
+            auto [rowid, cid, cname] = q.get_tuple();
+            if (cname == "Playlists" || cid == "pl") {
+                playlistsCollRowid = rowid;
+                break;
+            }
+        }
+    } catch (...) {}
+    return playlistsCollRowid;
+}
+
+void MusicDatabase::buildDatabaseGroups()
+{
+    if (databaseGroupsBuilt) return;
+
+    // Songs occupy [0, productStartIndex); formats[i] >> 8 packs the collection
+    // ROWID, & 0xff the format byte.
+    uint32_t n = (productStartIndex > 0 &&
+                  productStartIndex <= (uint32_t)formats.size())
+                     ? productStartIndex
+                     : (uint32_t)formats.size();
+    if (n == 0) return; // not indexed yet -- retry on the next call
+
+    databaseGroupsBuilt = true;
+    databaseGroupList.clear();
+
+    // Count songs per collection and tally format bytes (for the modal colour),
+    // straight from the in-memory formats[] -- no table scan.
+    std::unordered_map<int, int> count;
+    std::unordered_map<int, std::unordered_map<uint8_t, int>> byteTally;
+    for (uint32_t i = 0; i < n; i++) {
+        int rowid = formats[i] >> 8;
+        count[rowid]++;
+        byteTally[rowid][formats[i] & 0xff]++;
+    }
+
+    // Collection id/name by ROWID.
+    std::unordered_map<int, std::pair<std::string, std::string>> meta;
+    try {
+        auto q = db.query<int, std::string, std::string>(
+            "SELECT ROWID, id, name FROM collection");
+        while (q.step()) {
+            auto [rowid, cid, cname] = q.get_tuple();
+            meta[rowid] = { cid, cname };
+        }
+    } catch (...) {}
+
+    for (auto const& kv : count) {
+        int rowid = kv.first;
+        uint8_t modal = 0;
+        int best = -1;
+        for (auto const& b : byteTally[rowid])
+            if (b.second > best) {
+                best = b.second;
+                modal = b.first;
+            }
+        std::string id, name;
+        auto it = meta.find(rowid);
+        if (it != meta.end()) {
+            id = it->second.first;
+            name = it->second.second;
+        }
+        if (name.empty()) name = id;
+        databaseGroupList.push_back({ rowid, id, name, kv.second, modal });
+    }
+    std::sort(databaseGroupList.begin(), databaseGroupList.end(),
+              [](DatabaseGroup const& a, DatabaseGroup const& b) {
+                  if (a.count != b.count) return a.count > b.count;
+                  return toLower(a.name) < toLower(b.name);
+              });
+}
+
+std::vector<MusicDatabase::DatabaseGroup> const& MusicDatabase::databaseGroups()
+{
+    if (!databaseGroupsBuilt) buildDatabaseGroups();
+    return databaseGroupList;
+}
+
+void MusicDatabase::setDatabaseFilter(int rowid)
+{
+    // Reset the sibling browse/filter states -- one filter drives the index.
+    podcastFilterActive = false;
+    podcastShowFilter = -1;
+    podcastShowList.clear();
+    otherFilterActive = false;
+    otherPlatformFilter = -1;
+    filterHueRank.clear();
+    filterHueCount = 0;
+    extensionFilterGid = -1;
+    databaseFilterRowid = rowid;
+    pluginFilterGid = -1;
+
+    if (rowid < 0) {
+        titleIndex.setFilter();
+        formatFilterActive = false;
+        filteredCandidates.clear();
+        filteredCandidates.shrink_to_fit();
+        return;
+    }
+
+    titleIndex.setFilter([=](int index) {
+        // Songs only (products excluded); keep those in this collection.
+        if (index < 0 || index >= (int)productStartIndex) return true; // exclude
+        return (formats[index] >> 8) != rowid;                         // keep == rowid
+    });
+
+    // Same filtered-candidate + hue precompute + pre-sort as the other filters.
+    formatFilterActive = true;
+    filteredCandidates.clear();
+    uint32_t sz = titleIndex.size();
+    std::set<uint16_t> hues;
+    for (uint32_t i = 0; i < sz; i++) {
+        if (titleIndex.isFiltered(i)) continue;
+        filteredCandidates.push_back(i);
+        if (i < productStartIndex) hues.insert(formatHue[i]);
+    }
+    int rank = 0;
+    for (uint16_t h : hues) filterHueRank[h] = rank++;
+    filterHueCount = (int)hues.size();
+    sortCandidatesByTitle(filteredCandidates);
 }
 
 int MusicDatabase::search(std::string const& query, std::vector<int>& result,
@@ -1364,11 +2084,27 @@ int MusicDatabase::search(std::string const& query, std::vector<int>& result,
             // ".sid" of the same title+composer.
             uint32_t fk =
                 (index < (int)formatKey.size()) ? formatKey[index] : 0;
-            if (composer.empty() || fk == 0) {
+            // Weak-identity guard: never fold when we can't actually tell two rows
+            // apart. Beyond an unknown format (fk==0), this covers any PLACEHOLDER
+            // composer (isUnknownComposer: ""/"?"/"<?>"/"unknown"/"anonymous"/...,
+            // the same canonical list the UI folds to "Uncredited Composer") and an
+            // EMPTY title. Those dodge a plain empty-string check but are not
+            // identity: e.g. 59 distinct Dreamcast games all indexed as
+            // {title:"", composer:"?", ext:dsf} (MULTI: game containers) were
+            // collapsing into one search/browse row. A visible duplicate is always
+            // preferable to shadowing a distinct song, so keep both.
+            if (fk == 0 || title.empty() || isUnknownComposer(composer)) {
                 result.push_back(index);
                 return true;
             }
-            identity = title + "\t" + composer + "\t" + std::to_string(fk);
+            // Case-fold title + composer: zxart stores titles UPPERCASE while
+            // modland uses lowercase, so the same tune (same real ext + author)
+            // would slip the fold on case alone (e.g. Ironman's "AMIGA.stc"
+            // [zxart "Spectrum AY"] vs "amiga.stc" [modland "ST Song Compiler"],
+            // one ZX Spectrum Sound Tracker tune under two source-supplied
+            // format names). Fold them; priority still picks the winner.
+            identity =
+                toLower(title) + "\t" + toLower(composer) + "\t" + std::to_string(fk);
         }
 
         if (seen.find(identity) == seen.end()) {
@@ -1397,11 +2133,11 @@ int MusicDatabase::search(std::string const& query, std::vector<int>& result,
         composer_query = p[1];
     }
 
-    // Empty query: normally blank (the user types to search). But when a *small*
-    // platform filter is active (fewer than kFilterShowAllLimit songs), a tiny
-    // format isn't worth typing for -- so list ALL of its songs up front, sorted
-    // alphabetically by title. Large filters / no filter stay blank.
-    static constexpr size_t kFilterShowAllLimit = 1000;
+    // Empty query: normally blank (the user types to search). But when a platform
+    // or extension filter is active, list ALL of its songs up front, alphabetical
+    // by title, so the whole category is browsable. filteredCandidates was sorted
+    // once at filter-activation (see sortCandidatesByTitle), so this just slices
+    // it -- no per-keystroke sort, and no size cap. No filter -> stays blank.
     if (query == "") {
         // Podcasts browse: with the Podcasts filter active and no drilled-in
         // show, list the shows themselves (one synthetic row each). Drilled into
@@ -1424,9 +2160,15 @@ int MusicDatabase::search(std::string const& query, std::vector<int>& result,
         // sub-platform GROUP rows; drilled in, list that platform's songs
         // sorted alphabetically by title.
         if (otherFilterActive && otherPlatformFilter < 0) {
-            for (auto const& g : otherPlatformList)
-                if (!add_unique(OTHER_PLATFORM_INDEX + g.first) &&
-                    result.size() >= searchLimit)
+            // Top level lists otherTopRows (real groups + family parents); drilled
+            // into a family, list that family's children instead.
+            const std::vector<int>* rows = &otherTopRows;
+            if (otherParentFilter >= 0) {
+                auto it = otherFamilyChildRows.find(otherParentFilter);
+                if (it != otherFamilyChildRows.end()) rows = &it->second;
+            }
+            for (int synthIdx : *rows)
+                if (!add_unique(synthIdx) && result.size() >= searchLimit)
                     break;
             return result.size();
         }
@@ -1446,23 +2188,31 @@ int MusicDatabase::search(std::string const& query, std::vector<int>& result,
                 if (!add_unique(idx) && result.size() >= searchLimit) break;
             return result.size();
         }
-        if (formatFilterActive && !filteredCandidates.empty() &&
-            filteredCandidates.size() < kFilterShowAllLimit) {
-            std::vector<int> sorted(filteredCandidates.begin(),
-                                    filteredCandidates.end());
-            std::sort(sorted.begin(), sorted.end(), [&](int a, int b) {
-                return toLower(titleIndex.getString(a)) <
-                       toLower(titleIndex.getString(b));
-            });
-            for (int idx : sorted) {
+        if (formatFilterActive && !filteredCandidates.empty()) {
+            // Already alphabetical (sorted at filter-activation): just list it,
+            // capped only by searchLimit.
+            for (int idx : filteredCandidates) {
                 if (!add_unique(idx) && result.size() >= searchLimit) break;
             }
+        }
+        // On the Playlists collection screen, also list the user's config-dir
+        // playlists (Favorites + any created at runtime). These are not part of
+        // the indexed "Playlists" collection -- that only holds the shipped
+        // data/playlists lists -- so without this the DB filter (which suppresses
+        // the normal playLists injection below) would never show a user list.
+        if (databaseFilterRowid == playlistsCollectionRowid()) {
+            for (int i = 0; i < (int)playLists.size(); i++)
+                add_unique(PLAYLIST_INDEX + i);
         }
         return result.size();
     }
 
-    // Push back all matching playlists (unless a platform filter is active)
-    if (!formatFilterActive) {
+    // Push back all matching playlists. Normally suppressed while any format/DB
+    // filter is active, but the Playlists collection is the one filter that
+    // *should* still list them (its indexed rows are the shipped lists; these are
+    // the user's).
+    if (!formatFilterActive ||
+        databaseFilterRowid == playlistsCollectionRowid()) {
         for (int i = 0; i < (int)playLists.size(); i++) {
             if (toLower(playLists[i].name).find(query) != std::string::npos)
                 add_unique(PLAYLIST_INDEX + i);
@@ -1502,16 +2252,49 @@ int MusicDatabase::search(std::string const& query, std::vector<int>& result,
     titleIndex.search(title_query, tresult, searchLimit);
     // Order title matches by collection priority (higher first) so preferred
     // sources -- e.g. HVSC over remix collections -- surface first AND win the
-    // dedup (add_unique keeps the first-seen of any fold). Stable, so rows of
-    // equal priority keep their existing (index) order. Priority defaults to 0.
-    if (!collPriority.empty()) {
-        std::stable_sort(tresult.begin(), tresult.end(), [&](int a, int b) {
-            auto prio = [&](int idx) {
-                int coll = formats[idx] >> 8;
-                return coll < (int)collPriority.size() ? collPriority[coll] : 0;
-            };
-            return prio(a) > prio(b);
+    // dedup (add_unique keeps the first-seen of any fold). Priority is the PRIMARY
+    // key (defaults to 0). Since every collection now carries a distinct priority
+    // (db.lua), the SECONDARY key -- match quality -- only breaks ties WITHIN one
+    // collection, surfacing the closest title matches first (exact > prefix >
+    // word-start > substring). The `seq` field keeps it stable for full ties.
+    // Both keys are computed once per row (simplify() is not free) rather than in
+    // the comparator.
+    if (!tresult.empty()) {
+        std::string q = title_query;
+        SearchIndex::simplify(q);
+        struct Row { int index, prio, score, seq; };
+        std::vector<Row> rows;
+        rows.reserve(tresult.size());
+        int seq = 0;
+        for (int idx : tresult) {
+            int coll = formats[idx] >> 8;
+            int prio = coll < (int)collPriority.size() ? collPriority[coll] : 0;
+            int score = 0;
+            if (!q.empty()) {
+                std::string s = titleIndex.getString(idx);
+                SearchIndex::simplify(s);
+                if (s == q) {
+                    score = 4;                       // exact title
+                } else {
+                    auto pos = s.find(q);
+                    if (pos == std::string::npos)
+                        score = 0;                   // loose <=3-char bucket hit
+                    else if (pos == 0)
+                        score = 3;                   // prefix
+                    else if (s[pos - 1] == ' ')
+                        score = 2;                   // start of an inner word
+                    else
+                        score = 1;                   // substring
+                }
+            }
+            rows.push_back({ idx, prio, score, seq++ });
+        }
+        std::sort(rows.begin(), rows.end(), [](Row const& a, Row const& b) {
+            if (a.prio != b.prio) return a.prio > b.prio;
+            if (a.score != b.score) return a.score > b.score;
+            return a.seq < b.seq;
         });
+        for (size_t i = 0; i < rows.size(); i++) tresult[i] = rows[i].index;
     }
     for (int index : tresult) {
         if (!passesOtherDrill(index)) continue;
@@ -1644,12 +2427,19 @@ SongInfo MusicDatabase::getSongInfo(int index) const
         // the groupId so the UI can drill in (it is not playable).
         int gid = index - OTHER_PLATFORM_INDEX;
         std::string name;
+        bool isFamily;
         {
             std::lock_guard lock{ dbMutex };
             for (auto const& g : otherPlatformList)
                 if (g.first == gid) name = g.second;
+            isFamily = otherFamilyGids.count(gid) > 0;
         }
-        return SongInfo("otherplatform::" + std::to_string(gid), "", name, "",
+        // A family PARENT row (e.g. "Virtual Platforms") drills into its children,
+        // so it gets an "othergroup::" path the UI routes to setOtherParent; a
+        // real group keeps "otherplatform::" (drills to its songs).
+        return SongInfo((isFamily ? "othergroup::" : "otherplatform::") +
+                            std::to_string(gid),
+                        "", name, "",
                         subPlatformByte == ARCADE ? "Arcade" : "Other");
     }
 
@@ -2031,6 +2821,11 @@ void initFormats()
     format_map["stereo sidplayer"] = STR;
     // Commodore TED (16/116/+4) .prg tunes -- identify_song() tags these "TED".
     format_map["ted"] = PRG;
+    // Commodore VIC-20 (VIC-I sound). The modland "Vic-Tracker" corpus (.vt),
+    // played by victrackerplugin. The unemulated VIC-20/PET .prg tunes stay
+    // skipped (prgForUnemulatedMachine), so this platform holds only playable
+    // VIC-TRACKER tunes (plus any "Youtube (VIC 20)" captures via platformName).
+    format_map["vic-tracker"] = VIC20;
 
     // --- ZX Spectrum 16/48 beeper (1-bit) ---
     // beepola/picatune2 are listed in uade_formats (default UADE/Amiga); these
@@ -2168,19 +2963,17 @@ void initFormats()
     // Atari 2600/VCS (TIA chip) demoscene tunes from demozoo/Fujiology carry the
     // platform string "Atari 2600 Video Computer System (VCS)". That starts with
     // "atari", so the generic startsWith("atari") fallback below would lump them
-    // in with the Atari ST/STE line -- wrong machine. The TIA is its own chip
-    // (not POKEY either), but there's no dedicated 2600 filter yet, so bucket
-    // them under Atari 8Bit for now via this explicit override (checked before
-    // the fallback). Revisit if a proper VCS/TIA category is added.
-    format_map["atari 2600 video computer system (vcs)"] = POKEY;
+    // in with the Atari ST/STE line -- wrong machine. The TIA is its own chip,
+    // not POKEY, and it now has its own filter under the TAB "Atari" group (it
+    // was bucketed under Atari 8Bit/POKEY until 2026-07-15).
+    format_map["atari 2600 video computer system (vcs)"] = ATARIVCS;
     // Atari Jaguar demozoo/Fujiology entries: game-soundtrack rips (mostly MP3
     // recordings, a few .xm/.mod modules), NOT ST chiptunes -- but "atari jaguar"
     // would hit the startsWith("atari") fallback and pollute the Atari ST/STE
-    // filter. The Jaguar has no native chip music format and there's no
-    // dedicated filter, so bucket it under OTHER ("Other Platforms"). (The few
+    // filter. It now has its own filter under the TAB "Atari" group. (The few
     // .mod among these are genuine Amiga ProTracker modules and get pulled to
     // Amiga by the .mod correction near the end of formatToByte.)
-    format_map["atari jaguar"] = OTHER;
+    format_map["atari jaguar"] = ATARIJAGUAR;
     format_map["soundsmith"] = APPLE;    // Apple IIgs SoundSmith
     format_map["playerpro"] = APPLEMAC;  // Macintosh PlayerPRO tracker (.mad), overrides uade_formats default
     format_map["jaytrax"] = TRACKER;  // JayTrax (.jxs), cross-platform synth tracker -- not UADE/Amiga
@@ -2214,6 +3007,11 @@ void initFormats()
     format_map["sega genesis"] = MEGADRIVE; // Zophar Genesis VGM gamerips
     format_map["megadrive gym"] = MEGADRIVE;
     format_map["megadrive cym"] = MEGADRIVE;
+    // VGM Music Maker (Shiru): a Windows cross-tracker for the Sega Mega Drive/
+    // Genesis (YM2612 + SN76489), NOT an Amiga format -- it was previously listed
+    // in uade_formats. .vge is its module extension.
+    format_map["vgm music maker"] = MEGADRIVE;
+    format_map["vge"] = MEGADRIVE;
     format_map["sega 32x"] = MEGADRIVE;
     format_map["sega mega cd"] = MEGADRIVE;
     format_map["playstation sound format"] = PLAYSTATION;
@@ -2267,7 +3065,7 @@ void initFormats()
            "mikmod unitrk", "tfmx pro", "tfmx 7v", "okt", "martin walker",
            "hvl", "prorunner 2.0", "prorunner 1.0", "buzzic 2", "buzzic",
            "noisepacker 3.x", "noisepacker 2.x", "amos music bank",
-           "pixel painters fmf", "pixel painters ftf", "arpeggiator",
+           "arpeggiator",
            "astroidea xmf", "easytrax", "m.o.n new", "m.o.n old",
            "trackerpacker 3", "musicmaker v8 old", "ac1d-dc1a packer",
            "ashley hogg", "mugician", "mugician ii", "pha packer",
@@ -2312,10 +3110,13 @@ void initFormats()
                            "a.m.composer 1.2",
                            "opl archive" }) // OPL2/OPL3 VGM logs (opl.wafflenet.com)
         format_map[f] = ADPLUG;
-    // Japanese FM home computers (NEC PC-98, Sharp X68000, Fujitsu FM Towns).
-    for (char const* f :
-         { "fm sound driver (fmp)", "pmd", "s98", "mdx", "euphony" })
-        format_map[f] = JPFM;
+    // Japanese FM home computers, split by machine (TAB "Japanese Computers"
+    // group). Keys that double as extensions (pmd/s98/mdx) also drive the ext
+    // fallback in formatToByte, so a bare .mdx still lands on X68000.
+    for (char const* f : { "fm sound driver (fmp)", "pmd", "s98" })
+        format_map[f] = JPFM;      // NEC PC-98 (FMP/PMD drivers, S98 OPN logs)
+    format_map["mdx"] = JPX68000;  // Sharp X68000
+    format_map["euphony"] = JPFMTOWNS; // Fujitsu FM Towns (.eup)
     // PC / DAW / synth.
     for (char const* f : { "deflemask", "v2", "piston collage",
                            "piston collage protected", "renoise", "renoise old",
@@ -2334,16 +3135,66 @@ void initFormats()
     format_map["ogg"] = OGG; // zxart ogg-fallback tunes (format string "OGG")
     format_map["iso-mpeg audio layer-2"] = MP3;
     format_map["iso-mpeg audio layer-3"] = MP3;
+    // Rendered-audio containers, keyed as EXTENSIONS for the fallback at the end
+    // of formatToByte. Mirrors ffmpegExtensions() in FFMPEGPlugin.cpp (the set we
+    // can actually decode) so anything we play as plain audio and that carries no
+    // usable format string lands in the MP3/OGG "no platform" filter rather than
+    // reaching no filter at all. Mostly demozoo rows tagged "Demoscene" whose
+    // file IS the audio: ~661 wav, ~312 flac, ~60 mp2, ~18 m4a, ~4 aif, ~4 opus.
+    // mp3/ogg are already keyed above.
+    // NOT "8svx": it is in ffmpegExtensions() but IFF 8SVX is an Amiga sample
+    // format, so it belongs to Amiga, not the rendered-audio bucket. Don't
+    // "complete" this list from ffmpegExtensions() without that exception.
+    for (char const* f : { "wav", "flac", "aiff", "aif", "mp2", "m4a", "aac",
+                           "mp4", "opus", "mpeg", "ac3", "wma" })
+        format_map[f] = MP3;
+    // Chip/module EXTENSIONS whose platform is fixed by the format but which
+    // format_map only keyed under their long display name ("Nintendo Sound
+    // Format", "Commodore 64"), never the extension. A song naming the bare code
+    // -- which ModArchive rows already do (see codeNames in describeFormat) and
+    // which filter_demozoo_archives.py --classify now writes for archive rows --
+    // therefore reached no platform filter at all. The rest of the codes that
+    // pass writes (XM/MOD/IT/AHX/MED/...) already resolve via uade_formats
+    // (formats.h) or the entries above.
+    for (char const* f : { "sid", "psid" })
+        format_map[f] = SID;
+    for (char const* f : { "nsf", "nsfe" })
+        format_map[f] = NES;
+    format_map["sap"] = POKEY;
+    for (char const* f : { "mmd0", "mmd1", "mmd2", "mmd3" })
+        format_map[f] = AMIGA; // OctaMED (MED itself already resolves)
+    // Same gap, found by peeking inside the demozoo archives: we ship a plugin
+    // for each of these, but format_map only knew the plugin's display name
+    // ("AdLib", "FamiTracker"), never the extension the archive member carries.
+    format_map["a2m"] = ADPLUG;      // AdLib Tracker 2 ("adlib" was keyed, a2m not)
+    format_map["mid"] = ADPLUG;      // AdPlug renders .mid on OPL
+    format_map["mdl"] = PCTRACKER;   // Digitrakker (OpenMPT)
+    format_map["mo3"] = PCTRACKER;   // MO3-compressed module (OpenMPT). The
+                                     // wrapper can hold a MOD, but demoscene MO3
+                                     // is overwhelmingly XM/IT, i.e. PC.
+    format_map["prg"] = PRG;         // Tedplay claims .prg -> C16/116/+4 (TED)
+    // NOT keyed on purpose:
+    //   "ftm"  -- two formats sharing one extension (FamiTracker NES vs the
+    //             OpenMPT "FTMN" one); the plugins magic-gate it, so an
+    //             extension-keyed guess here would misfile one of them.
+    //   "mix"  -- StSound claims it, but .mix spans Atari ST YM and Amstrad CPC
+    //             rips; no single platform is right.
+    // ("sunvox" already resolves to PC via its format-string entry below.)
+    format_map["ams"] = PCTRACKER;   // Velvet Studio / Extreme Tracker (OpenMPT)
+    format_map["v2m"] = PC;          // Farbrausch V2 synth (Windows)
+    format_map["bbsong"] = ZXBEEPER; // Beepola (ZX Spectrum 1-bit beeper)
+    format_map["hsc"] = ADPLUG;      // HSC AdLib Composer
+    format_map["rad"] = ADPLUG;      // Reality AdLib Tracker
+    format_map["ptcop"] = PC;        // PxTone Collage ("pxtone" is keyed, not the ext)
     format_map["hippel st coso"] = ATARI;   // Atari ST Hippel
     format_map["bbc micro"] = ACORN;        // Acorn 8-bit (close enough)
     // Battle of the Bits (build_botb.py) format labels not covered above.
     format_map["mptm"] = PCTRACKER;         // OpenMPT native module
     format_map["adlib"] = ADPLUG;           // AdPlug OPL (rad/amd/a2m/dfm/snd)
     format_map["pxtone"] = PC;              // PxTone Collage (Studio Pixel)
-    format_map["vgm"] = OTHER;              // generic multi-chip VGM log
     format_map["playstation 2"] = PLAYSTATION2; // OCReMix PS2 game remixes
-    // Misc small consoles/arcade -> generic OTHER ("Other Platforms" filter).
-    for (char const* f : { "vectrex", "colecovision", "capcom q-sound format" })
+    // Misc small consoles -> generic OTHER ("Other Platforms" filter).
+    for (char const* f : { "vectrex", "colecovision" })
         format_map[f] = OTHER;
 
     // --- VGMRips (vgmrips.net) game rips -------------------------------------
@@ -2356,26 +3207,73 @@ void initFormats()
     format_map["game boy"] = GAMEBOY;          // DMG
     format_map["pc engine"] = HES;             // TurboGrafx (HuC6280)
     format_map["msx"] = MSX;
-    // Japanese FM home computers (OPN/OPNA family) -> JPFM, like .mdx/.s98/pmd.
-    for (char const* f : { "nec pc-98", "nec pc-88", "nec pc-80", "nec pc-88/98",
-                           "sharp x68000", "sharp x1", "fm towns", "fujitsu fm-7" })
+    // Japanese FM home computers by platform tag (OPN/OPNA family), split to the
+    // same three bytes as the driver formats above. NEC (PC-98/88/80) -> PC-98;
+    // Sharp (X68000/X1) -> X68000; Fujitsu (FM Towns/FM-7) -> FM Towns.
+    for (char const* f : { "nec pc-98", "nec pc-88", "nec pc-80", "nec pc-88/98" })
         format_map[f] = JPFM;
+    for (char const* f : { "sharp x68000", "sharp x1" })
+        format_map[f] = JPX68000;
+    for (char const* f : { "fm towns", "fujitsu fm-7" })
+        format_map[f] = JPFMTOWNS;
     format_map["ibm pc"] = PC;
     format_map["zx spectrum"] = SPECTRUM;
     format_map["commodore 64"] = SID;
     format_map["apple ii"] = APPLE;   // Apple IIGS
     format_map["apple iigs"] = APPLE;
+    // demozoo/scene.org tag their native Mac tunes "macOS" (executable-music
+    // .zip compo entries). Without this the MACOS byte was reachable ONLY from
+    // the YouTube path (platformNameToByte), so the "Mac OS" filter held 72
+    // videos and none of the 9 real tunes -- which fell through to the extension
+    // fallback, where ".zip" resolves to nothing, i.e. no filter at all.
+    for (char const* f : { "macos", "macosx intel", "macosx ppc" })
+        format_map[f] = MACOS;
+    format_map["ios"] = IOS;
+    // --- demoscene release-platform tags (demozoo/pouet/scene.org) ------------
+    // Same asymmetry as "macos" above: platformNameToByte knows these names, so
+    // a YouTube capture tagged with one reaches its filter, but a NATIVE row
+    // carrying the identical string missed format_map and fell through to the
+    // extension fallback -- which rescues .xm/.it/.mod but keys NOTHING for the
+    // archive extensions (.zip/.rar/.7z/.gz) most of these releases use, leaving
+    // the song matched by no filter at all. The trailing .mod/.xm correction in
+    // formatToByte still overrides these for module files, so only the archive
+    // rows actually change.
+    for (char const* f : { "windows", "ms-dos", "ms-dos/gus", "linux" })
+        format_map[f] = PC;
+    format_map["commodore plus/4"] = PRG;
+    // Real hardware / non-hardware with no dedicated filter -> Other Platforms.
+    for (char const* f : { "commodore pet", "commodore vic-20",
+                           "pico-8", "tic-80", "microw8", "raspberry pi",
+                           "browser", "calculator", "custom hardware" })
+        format_map[f] = OTHER;
+    // The Atari machines with their own filter under the TAB "Atari" group. Each
+    // MUST be listed explicitly: the startsWith(f, "atari") fallback in
+    // formatToByte would otherwise claim it for the ST/STE/TT filter.
+    format_map["atari lynx"] = ATARILYNX;
+    format_map["atari 7800"] = ATARI7800;
+    format_map["nintendo virtual boy"] = VIRTUALBOY; // VSU (libvgm-only chip)
+    // Real hardware with no dedicated TAB filter -> the "Other Platforms" drill,
+    // where each becomes its own named sub-group (see buildSubPlatforms).
+    // ("vectrex" is already mapped above, alongside colecovision.)
+    format_map["intellivision"] = OTHER;
+    // The remaining VGMRips labels ("Amstrad CPC", "Sega SG-1000", "Atari 8bit")
+    // are already mapped by the collections above and need no entry here.
     // Arcade boards get their own top-level filter ("Arcade"), which drills into
     // these sub-platforms (recovered from the format string, see buildSubPlatforms).
-    // Neo Geo (arcade/AES) joins them, shown as "Arcade (Neo Geo)".
+    // Neo Geo (arcade/AES) joins them, shown as "Arcade (Neo Geo)"; modland's
+    // "Capcom Q-Sound Format" (.miniqsf rips of CPS-1/CPS-2 boards -- QSound is
+    // Capcom's arcade sound hardware) folds into "Arcade (Capcom)".
     for (char const* f : { "arcade", "arcade (capcom)", "arcade (konami)",
                            "arcade (namco)", "arcade (sega)", "arcade (taito)",
-                           "neo geo" })
+                           "neo geo", "capcom q-sound format" })
         format_map[f] = ARCADE;
-    // Atari Jaguar folds into the Atari ST/E/Falcon/Jaguar filter.
-    format_map["atari jaguar"] = ATARI;
-    // Neo Geo Pocket / pinball have no dedicated TAB filter yet -> "Other Platforms".
-    for (char const* f : { "neo geo pocket", "pinball", "other" })
+    // ("atari jaguar" is mapped to its own ATARIJAGUAR byte further up; it used
+    // to be re-pointed at ATARI here, which silently won over that entry.)
+    // SNK Neo Geo Pocket / Color (T6W28) -- its own top-level TAB filter row.
+    format_map["neo geo pocket"] = NEOGEOPOCKET;
+    format_map["neogeo pocket"] = NEOGEOPOCKET; // spelling variant (no space)
+    // pinball has no dedicated TAB filter yet -> "Other Platforms".
+    for (char const* f : { "pinball", "other" })
         format_map[f] = OTHER;
 
     // mirsoft.info "World of Game MODs": as of db.lua v94 its `format` column is
@@ -2388,7 +3286,7 @@ void initFormats()
     format_map["pc"] = PC;                   // PC DOS/Windows game tracker mods
     format_map["macintosh"] = APPLEMAC;
     format_map["playstation"] = PLAYSTATION;
-    format_map["atari falcon"] = ATARI;
+    format_map["atari falcon"] = ATARIFALCON;
     format_map["nintendo 64"] = NINTENDO64;
     format_map["sega saturn"] = SATURN;
     format_map["dreamcast"] = DREAMCAST;
@@ -2542,10 +3440,15 @@ static uint8_t platformNameToByte(std::string s)
         { "c64dx/c65/mega65", SID },
         { "c16/116/plus4", PRG },    { "commodore plus/4", PRG },
         { "commodore 16", PRG },
+        { "vic 20", VIC20 },         { "commodore vic-20", VIC20 },
+        { "vic-20", VIC20 },         { "commodore vic 20", VIC20 },
         { "atari st", ATARI },       { "atari ste", ATARI },
-        { "atari falcon 030", ATARI },{ "atari falcon", ATARI },
-        { "atari tt 030", ATARI },
-        { "atari xl/xe", POKEY },    { "atari vcs", POKEY },
+        { "atari tt 030", ATARI }, // TT folds in with ST/STE (same YM2149)
+        { "atari falcon 030", ATARIFALCON },
+        { "atari falcon", ATARIFALCON },
+        { "atari xl/xe", POKEY },    { "atari vcs", ATARIVCS },
+        { "atari 7800", ATARI7800 }, { "atari lynx", ATARILYNX },
+        { "atari jaguar", ATARIJAGUAR },
         { "zx spectrum", SPECTRUM }, { "zx enhanced", SPECTRUM },
         { "zx-81", SPECTRUM },       { "spectrum", SPECTRUM },
         { "zx spectrum beeper", ZXBEEPER },
@@ -2565,7 +3468,7 @@ static uint8_t platformNameToByte(std::string s)
         { "nes/famicom", NES },      { "snes/super famicom", SNES },
         { "nintendo 64", NINTENDO64 },{ "nintendo ds", NDS },
         { "gameboy", GAMEBOY },      { "gameboy color", GAMEBOY },
-        { "gameboy advance", GBA },
+        { "gameboy advance", GBA },  { "virtual boy", VIRTUALBOY },
         { "nec turbografx/pc engine", HES }, { "nec pc engine", HES },
         { "playstation", PLAYSTATION }, { "playstation 2", PLAYSTATION2 },
         { "playstation 3", PS3 },    { "playstation portable", PSP },
@@ -2574,8 +3477,7 @@ static uint8_t platformNameToByte(std::string s)
         { "ms-dos/gus", PC },        { "linux", PC },
         { "audiosurf", PC },
         // Real hardware, but no dedicated TAB filter -> "Other Platforms".
-        { "other", OTHER },          { "atari jaguar", OTHER },
-        { "atari lynx", OTHER },     { "atari 7800", OTHER },
+        { "other", OTHER },
         { "vectrex", OTHER },        { "intellivision", OTHER },
         { "vic 20", OTHER },         { "commodore pet", OTHER },
         { "oric", OTHER },           { "thomson", OTHER },
@@ -2583,13 +3485,25 @@ static uint8_t platformNameToByte(std::string s)
         { "vector-06c", OTHER },     { "bk-0010/11m", OTHER },
         { "sharp mz", OTHER },       { "kc-85", OTHER },
         { "trs-80/coco/dragon", OTHER }, { "spectravideo 3x8", OTHER },
-        { "wonderswan", OTHER },     { "neogeo pocket", OTHER },
-        { "virtual boy", OTHER },    { "pokemon mini", OTHER },
+        // "wonderswan" mapped to OTHER until 2026-07-15, which split the 11
+        // captures off from the 177 native WonderSwan rips that format_map
+        // already sent to the WONDERSWAN filter. The two tables must agree.
+        { "wonderswan", WONDERSWAN }, { "neogeo pocket", NEOGEOPOCKET },
+        { "neo geo pocket", NEOGEOPOCKET },
+        { "pokemon mini", OTHER },
         { "nintendo wii", WII },     { "gamecube", GAMECUBE },
         { "nintendo gamecube", GAMECUBE },
         { "xbox", XBOX },            { "xbox 360", XBOX360 },
         // No hardware chip identity of their own (fantasy consoles, web/VM,
         // mobile, calculators, compo buckets) -> "Other Platforms".
+        // "animation/video" (a rendered video, not a hardware prod), "mirc"
+        // (mIRC script art) and "alambik" (a defunct multimedia player) are the
+        // same kind of thing. They were the ONLY tags left unmapped, which is
+        // what the old "Unclassified YouTube Audio" filter held; pouet names no
+        // hardware for them, so Other Platforms is where they belong. Note a
+        // combo like "Animation/Video,Amiga AGA" still resolves to Amiga below.
+        { "animation/video", OTHER }, { "mirc", OTHER },
+        { "alambik", OTHER },
         { "wild", OTHER },           { "javascript", OTHER },
         { "java", OTHER },           { "flash", OTHER },
         { "android", OTHER },        { "pocketpc", OTHER },
@@ -2649,11 +3563,17 @@ static uint8_t formatToByte(std::string const& fmt, std::string const& path,
             (path.find("youtu.be/") != std::string::npos)) {
             // The format string names the source platform (pouet's
             // "Youtube (<platform>)" or a hand-curated manualDatabasePatch name
-            // like "ZX Spectrum Beeper"). File the video under that platform;
-            // only genuinely non-hardware tags (Wild, Animation/Video, web...)
-            // fall through to the unclassified YouTube bucket.
+            // like "ZX Spectrum Beeper"). File the video under that platform.
+            // Tags naming no hardware (Wild, Animation/Video, JavaScript, ...)
+            // are mapped to OTHER by the table, and an unrecognised tag falls
+            // back to OTHER too: it then shows up in the "Other Platforms" drill
+            // as its own "Youtube (<tag>)" group, which is visible and names
+            // itself. (It used to fall back to the YOUTUBE byte and its own
+            // "Unclassified YouTube Audio" filter; that filter is gone, so
+            // YOUTUBE would now be a byte no filter matches -- i.e. a video no
+            // platform filter could reach.)
             uint8_t p = platformNameToByte(fmt);
-            return p ? p : YOUTUBE;
+            return p ? p : OTHER;
         }
 
         if (endsWith(f, "tracker")) l = TRACKER;
@@ -2683,9 +3603,9 @@ static uint8_t formatToByte(std::string const& fmt, std::string const& path,
         // Last resort: classify by the file extension. format_map keys many
         // extensions directly (mdx, s98, sgc, hes, ...), so a song whose stored
         // format string is missing or non-canonical still lands on the right
-        // platform. This guarantees e.g. every .mdx is JPFM (PC-98/X68000/FM
-        // Towns) regardless of how its source spelled the format. Not cached
-        // under f (see above).
+        // platform. This guarantees e.g. every .mdx is JPX68000 (Sharp X68000)
+        // regardless of how its source spelled the format. Not cached under f
+        // (see above).
         if (l == UNKNOWN_FORMAT && !path.empty()) {
             std::string ext = toLower(utils::path_extension(path));
             if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
@@ -2739,26 +3659,50 @@ static uint8_t formatToByte(std::string const& fmt, std::string const& path,
     }
 
     // Demoscene MP3/OGG rips (mainly demozoo) whose format string is the source
-    // platform ("ZX Spectrum", "Amiga", "Windows", ...) rather than a codec:
-    // file them under that platform instead of the unclassified MP3/OGG bucket.
-    // Gated on the extension having classified them as MP3/OGG, so real chip
-    // tunes and the module entries (which carry the same category strings) are
-    // untouched. Generic tags with no hardware ("Demoscene", "Mobile"->Other)
-    // are handled per the table; unlisted ones stay MP3/OGG.
+    // platform rather than a codec: file them under that platform instead of the
+    // MP3/OGG "no platform" bucket. Gated on the extension having classified them
+    // as MP3/OGG, so real chip tunes and the module entries (which carry the same
+    // category strings) are untouched. Generic tags with no hardware
+    // ("Demoscene", "Mobile") stay per the table; unlisted ones stay MP3/OGG.
+    //
+    // Only names ABSENT from format_map can be reached here: format_map is
+    // consulted first. "Windows"/"MS-Dos"/"Linux"/"Custom Hardware" were moved
+    // there (they must resolve for archive rows too, not just MP3/OGG) and so
+    // are dropped from this table; "amiga"/"zx spectrum"/"msx"/"neo geo" were
+    // already unreachable for the same reason. The rest stay here deliberately:
+    // they are pouet/demozoo names format_map does NOT know, and gating them on
+    // MP3/OGG keeps them from claiming a module that merely carries the same
+    // release-platform tag.
     if (l == MP3 || l == OGG) {
         static const std::map<std::string, uint8_t> cat = {
-            { "zx spectrum", SPECTRUM },
-            { "amiga", AMIGA },      { "amiga ppc/rtg", AMIGA },
-            { "windows", PC },       { "msx", MSX },
+            { "amiga ppc/rtg", AMIGA },
             { "nintendo game boy advance (gba)", GBA },
             { "nintendo ds (nds)", NDS },
-            { "mobile", OTHER },     { "neo geo", OTHER },
-            { "sony playstation portable (psp)", OTHER },
-            { "ms-dos", OTHER },     { "linux", OTHER },
-            { "gamepark gp2x", OTHER }, { "custom hardware", OTHER },
+            { "sony playstation portable (psp)", PSP },
+            { "mobile", OTHER },     { "gamepark gp2x", OTHER },
         };
         auto it = cat.find(f);
         if (it != cat.end()) l = it->second;
+    }
+
+    // Falcon-native sample trackers: Graoumf Tracker (.gtk), Digital Tracker
+    // (.dtm), Digi-Mix (.mix). Their format strings ("Atari ST", "Digital
+    // Tracker DTM", "Graoumf Tracker", "Atari Digi-Mix") all resolve to the
+    // YM2149 ST byte, but the machine is a Falcon and only the extension tells
+    // them apart. Gated on l == ATARI so the unrelated .dtm formats (DeFy AdLib
+    // Tracker / DigiTrekker), which classify as PC/AdLib, are never claimed --
+    // the same guard the old display-only relabel in describeFormat used, which
+    // this replaces (the tunes now carry the Falcon byte, so they are also
+    // FILTERABLE as Falcon rather than merely labelled).
+    // Reads the extension off the PATH, where the relabel used resolveExtension()
+    // (the real inner format). Equivalent for the whole corpus -- every .gtk/.dtm/
+    // .mix tune is stored uncompressed, and the 2 rows tagged "Atari Falcon"
+    // outright are keyed by format_map -- but a future .gtk.gz/.zip would land on
+    // ATARI, since formatToByte has the path only and cannot peek inside.
+    if (l == ATARI && !path.empty()) {
+        std::string ext = toLower(utils::path_extension(path));
+        if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
+        if (ext == "gtk" || ext == "dtm" || ext == "mix") l = ATARIFALCON;
     }
     return l;
 }
@@ -2777,12 +3721,21 @@ static std::string platformName(uint8_t b)
     case IMPULSETRACKER:
     case FASTTRACKER:
     case PCTRACKER: return "PC";
-    case JPFM: return "PC-98 / X68000";
+    case JPFM: return "PC-98";
+    case JPX68000: return "X68000";
+    case JPFMTOWNS: return "FM Towns";
     case SID:
     case STR: return "Commodore 64";
     case PRG: return "Commodore 16/+4";
-    case ATARI: return "Atari ST/STE";
+    case VIC20: return "Commodore VIC-20";
+    case NEOGEOPOCKET: return "Neo Geo Pocket";
+    case ATARI: return "Atari ST/STE/TT";
     case POKEY: return "Atari XL/XE";
+    case ATARIVCS: return "Atari VCS";
+    case ATARI7800: return "Atari 7800";
+    case ATARIFALCON: return "Atari Falcon";
+    case ATARILYNX: return "Atari Lynx";
+    case ATARIJAGUAR: return "Atari Jaguar";
     case SPECTRUM: return "ZX Spectrum";
     case ZXBEEPER: return "ZX Spectrum 16/48";
     case ZXAY: return "ZX Spectrum 128";
@@ -2803,6 +3756,7 @@ static std::string platformName(uint8_t b)
     case N3DS: return "Nintendo 3DS";
     case GAMECUBE: return "Nintendo GameCube";
     case WII: return "Nintendo Wii";
+    case VIRTUALBOY: return "Nintendo Virtual Boy";
     case SEGA:
     case MEGADRIVE: return "Sega Mega Drive";
     case SEGAMS: return "Sega 8-bit";
@@ -2912,13 +3866,13 @@ std::string MusicDatabase::platformForExtension(std::string const& rawExt)
         { "MSX (libkss)", "MSX" },
         { "HEPlugin", "PlayStation" },
         { "libvice", "Commodore 64" },
-        { "SC68", "Atari ST/STE" },
-        { "FMPPlugin", "PC-98 / X68000" },
+        { "SC68", "Atari ST/STE/TT" },
+        { "FMPPlugin", "PC-98" },
         { "V2Plugin", "PC" },
         { "USFPlugin", "Nintendo 64" },
-        { "StSound", "Atari ST/STE" },
+        { "StSound", "Atari ST/STE/TT" },
         { "STarKos", "Amstrad CPC" },
-        { "Quartet", "Atari ST/STE" },
+        { "Quartet", "Atari ST/STE/TT" },
         { "PxTone Collage Player", "PC" },
         { "NDSPlugin", "Nintendo DS" },
         { "HivelyPlugin", "Amiga" },
@@ -2928,25 +3882,26 @@ std::string MusicDatabase::platformForExtension(std::string const& rawExt)
         { "SunVox Player", "PC" },
         { "SoundSmith", "Apple IIGS" },
         { "SBStudio", "PC" },
-        { "S98", "PC-98 / X68000" },
+        { "S98", "PC-98" },
         { "PokeyNoise", "Atari XL/XE" },
         { "Organya Player", "PC" },
         { "NerdTracker2", "Nintendo NES" },
         { "Monotone", "PC" },
         { "MikMod", "Amiga" },
-        { "Megatracker", "Atari ST/STE" },
+        { "Megatracker", "Atari ST/STE/TT" },
         { "MED", "Amiga" },
         { "MaxTrax", "Amiga" },
-        { "MDX", "PC-98 / X68000" },
+        { "MDX", "X68000" },
         { "JayTrax", "PC" },
         { "IXS", "PC" },
-        { "Euphony", "PC-98 / X68000" },
+        { "Euphony", "FM Towns" },
         { "Coconizer", "Acorn Archimedes" },
         { "BBSong", "ZX Spectrum 16/48" },
         { "Archimedes Tracker", "Acorn Archimedes" },
         { "SCC-Musixx", "MSX" },
         { "GoatTracker", "Commodore 64" },
         { "DMF", "PC" },
+        { "Vic-Tracker", "Commodore VIC-20" },
     };
     if (auto it = pluginPlatform.find(primary); it != pluginPlatform.end())
         return it->second;
@@ -2992,6 +3947,188 @@ std::string MusicDatabase::platformScreenshotName(SongInfo const& s)
 std::string MusicDatabase::platformScreenshotSlug(uint8_t formatByte)
 {
     return platformSlugForByte(formatByte);
+}
+
+// pouet tags that name no machine. In a combo these lose to any tag that does,
+// so "Wild,Raspberry Pi" is a Raspberry Pi prod that happened to enter the wild
+// compo. This mirrors the specific-beats-generic rule in platformNameToByte, but
+// at name granularity: that function only needs to know a tag maps to OTHER,
+// while this one has to pick WHICH tag names the group. Fantasy consoles
+// (PICO-8/TIC-80/MicroW8) are deliberately NOT here -- they are the prod's
+// platform, virtual or not, and they own drill rows of their own.
+static bool isNonHardwareTag(std::string const& lower)
+{
+    static const std::set<std::string> m = {
+        "wild",  "javascript", "java", "flash", "animation/video",
+        "mirc",  "alambik",
+    };
+    return m.count(lower) > 0;
+}
+
+std::string MusicDatabase::subPlatformName(std::string const& fmt)
+{
+    auto trim = [](std::string x) {
+        size_t a = x.find_first_not_of(" \t");
+        if (a == std::string::npos) return std::string();
+        return x.substr(a, x.find_last_not_of(" \t") - a + 1);
+    };
+
+    std::string s = trim(fmt);
+    if (s.empty()) return "Unknown";
+
+    // Unwrap pouet's "Youtube (<tag>)" capture wrapper, so a capture groups with
+    // the hardware it was captured from: "Youtube (Oric)" and "Oric" are one
+    // "Oric" row. (Reversed 2026-07-15 -- captures used to be kept separate on
+    // the grounds that a recording is not a chiptune. The TAB screen is a
+    // taxonomy of hardware, and a platform must appear exactly once in it.)
+    // Every youtube format in the corpus carries the parens; a bare "Youtube"
+    // would fall through unchanged and group under its own name.
+    if (startsWith(toLower(s), "youtube")) {
+        auto op = s.find('(');
+        auto cp = s.rfind(')');
+        if (op != std::string::npos && cp != std::string::npos && cp > op)
+            s = trim(s.substr(op + 1, cp - op - 1));
+        if (s.empty()) return "Unknown";
+    }
+
+    // Combo ("Wild,Raspberry Pi"): the first tag naming real hardware wins,
+    // falling back to the first tag when every tag is non-hardware. Only combos
+    // whose tags are ALL non-filtered reach this drill -- platformNameToByte
+    // routes a combo naming any filtered platform to that platform's own byte,
+    // so e.g. "Youtube (Windows,Atari Lynx)" never gets here.
+    if (s.find(',') != std::string::npos) {
+        std::string pick;
+        for (auto const& tok : split(s, ",")) {
+            auto t = trim(tok);
+            if (t.empty()) continue;
+            if (pick.empty()) pick = t;
+            if (!isNonHardwareTag(toLower(t))) {
+                pick = t;
+                break;
+            }
+        }
+        if (!pick.empty()) s = pick;
+    }
+
+    // Spelling variants that differ by more than case, so the case-only fold in
+    // buildSubPlatforms can't catch them. The mobile family is one row by user
+    // decision (2026-07-15): a phone is a phone.
+    static const std::map<std::string, std::string> alias = {
+        { "mobile phone", "Mobile" },
+        { "android", "Mobile" },
+        // pouet tags the machine "VIC 20"; show its full name. (The hidden
+        // Demozoo .prg tunes already carry "Commodore VIC-20" verbatim.)
+        { "vic 20", "Commodore VIC-20" },
+        // The two TI-8x rows differ only by CPU (Z80 = TI-83/84, 68k = TI-89/92),
+        // a nuance nobody filters on; merge them into one calculator row.
+        { "ti-8x (z80)", "TI-8x Calculator" },
+        { "ti-8x (68k)", "TI-8x Calculator" },
+        // One vendor's handheld line (GP32 then GP2X); one row.
+        { "gamepark gp32", "GamePark" },
+        { "gamepark gp2x", "GamePark" },
+        // The genuinely-other catch-all row inside the Other drill: a handful of
+        // tunes tagged with the bare "Other" platform. Renamed to a playful
+        // "Easter Egg!" row (user, 2026-07-16) with its own EasterEgg.png logo.
+        { "other", "Easter Egg!" },
+    };
+    auto it = alias.find(toLower(s));
+    return it != alias.end() ? it->second : s;
+}
+
+// Drill rows that name no machine: a logo could never be right for them, so
+// subPlatformNames() does not report them as gaps. (The non-hardware pouet tags
+// -- Wild, JavaScript, ... -- are caught separately by isNonHardwareTag.)
+static bool isMetaSubPlatform(std::string const& lower)
+{
+    static const std::set<std::string> m = {
+        // "other" is aliased to "Easter Egg!" by subPlatformName, so the catch-all
+        // row reaches here under its display name, not the bare tag.
+        "vgm", "easter egg!", "unknown", "browser", "calculator",
+        "custom hardware",
+    };
+    return m.count(lower) > 0;
+}
+
+// Lowercased Other-drill sub-platform name -> the byte-less "family" parent it
+// nests under in the drill (a 2nd level within Other). Children keep the OTHER
+// byte and their own logos; the parent is a pure menu node with a "<family>.png"
+// of its own. Shared by buildSubPlatforms (the grouping) and the family-name list
+// (the missing-logo report), so both agree on what families exist.
+static std::map<std::string, std::string> const& subPlatformFamilyOf()
+{
+    static const std::map<std::string, std::string> m = {
+        { "tic-80", "Virtual / Fantasy Platforms / Consoles" },
+        { "pico-8", "Virtual / Fantasy Platforms / Consoles" },
+        { "microw8", "Virtual / Fantasy Platforms / Consoles" },
+    };
+    return m;
+}
+
+// Distinct family display names (deduped, sorted). Their logos live at
+// platformscreenshots/<name>.png, reported missing like any Other-drill row.
+std::vector<std::string> MusicDatabase::subPlatformFamilyNames()
+{
+    std::set<std::string> uniq;
+    for (auto const& [child, fam] : subPlatformFamilyOf()) uniq.insert(fam);
+    return { uniq.begin(), uniq.end() };
+}
+
+// Distinct canonical Other-drill row names, keeping only those for which
+// `keep(loweredName)` is true. Shared by subPlatformNames() (hardware rows) and
+// subPlatformNamesNonHardware() (everything else) so the two can never disagree
+// about how a row is named. Returns lower-sorted, deduped display spellings.
+static std::vector<std::string>
+otherDrillNames(std::function<bool(std::string const&)> keep)
+{
+    // Lowercased name -> the spelling the drill will display. Case-only variants
+    // ("GamePark GP2X"/"Gamepark GP2X") are ONE row, so they must be ONE line in
+    // the report, naming the row: same byte-order-first rule as buildSubPlatforms
+    // (prefers the interior capital, i.e. the proper-noun spelling).
+    std::map<std::string, std::string> canon;
+    try {
+        sqlite3db::Database db{
+            (Environment::getCacheDir() / "music.db").string()
+        };
+        // One representative path per distinct format string -- formatToByte
+        // needs it to recognise a youtube URL, and every row sharing a format
+        // string shares its kind. Cheap next to scanning all ~380k rows. (coll
+        // is unused by formatToByte; 0 matches every other caller.)
+        auto q = db.query<std::string, std::string>(
+            "SELECT format, MIN(path) FROM song GROUP BY format");
+        std::string fmt, path;
+        while (q.step()) {
+            std::tie(fmt, path) = q.get_tuple();
+            // ARCADE is deliberately excluded: its boards already have per-board
+            // logos keyed by format string (arcadeSubLogos / vgz-*.png).
+            if (formatToByte(fmt, path, 0) != OTHER) continue;
+            auto name = MusicDatabase::subPlatformName(fmt);
+            if (name.empty()) continue;
+            auto lower = toLower(name);
+            if (!keep(lower)) continue;
+            auto it = canon.find(lower);
+            if (it == canon.end() || name < it->second) canon[lower] = name;
+        }
+    } catch (...) {
+        // No cached DB yet (first run) or it is mid-reindex -- skip the report.
+    }
+    std::vector<std::string> out;
+    out.reserve(canon.size());
+    for (auto const& kv : canon) out.push_back(kv.second); // already lower-sorted
+    return out;
+}
+
+std::vector<std::string> MusicDatabase::subPlatformNames()
+{
+    return otherDrillNames([](std::string const& lower) {
+        return !isNonHardwareTag(lower) && !isMetaSubPlatform(lower);
+    });
+}
+
+std::vector<std::string> MusicDatabase::subPlatformNamesNonHardware()
+{
+    return otherDrillNames([](std::string const& lower) {
+        return isNonHardwareTag(lower) || isMetaSubPlatform(lower);
+    });
 }
 
 std::vector<std::string> MusicDatabase::platformScreenshotNames()
@@ -3178,24 +4315,80 @@ void MusicDatabase::buildSubPlatforms()
     // song.ROWID i+1 (contiguous; see getSongInfo / syncPodcastSongs) -- and
     // group by name.
     std::map<std::string, std::vector<int>> byName;
-    auto q = db.query<int, std::string>("SELECT ROWID, format FROM song");
-    while (q.step()) {
-        int rowid;
-        std::string fmt;
-        tie(rowid, fmt) = q.get_tuple();
-        int idx = rowid - 1;
-        if (idx < 0 || idx >= (int)n) continue;
-        if ((formats[idx] & 0xff) != subPlatformByte) continue;
-        std::string name = trim(fmt);
-        if (name.empty()) name = "Unknown";
-        // The bare "Arcade" group sits alongside the vendor-specific ones
-        // (Arcade (Capcom), ...), so disambiguate it as "Arcade (Other)"; and
-        // fold Neo Geo in as another vendor-style "Arcade (Neo Geo)" group.
-        if (subPlatformByte == ARCADE) {
-            if (toLower(name) == "arcade") name = "Arcade (Other)";
-            else if (toLower(name) == "neo geo") name = "Arcade (Neo Geo)";
+
+    // The active byte matches only a tiny fraction of songs (OTHER ~3k, ARCADE
+    // ~1.4k of ~776k), and the byte is already in memory (formats[]). Collect the
+    // matching ROWIDs first, then fetch ONLY those format strings -- instead of
+    // materialising the `format` TEXT column for all 776k rows and discarding
+    // 99.6% of it. Cuts each build from ~72ms to a few ms (the whole computeFilter
+    // Counts hiccup at startup, and every live Other/Arcade drill).
+    std::vector<int> matchIdx;
+    for (uint32_t idx = 0; idx < n; idx++)
+        if ((formats[idx] & 0xff) == subPlatformByte)
+            matchIdx.push_back((int)idx);
+
+    // Fetch in ROWID chunks (ROWID == idx + 1). Literal id lists, so no bind-var
+    // limit applies; 500 keeps each statement small.
+    constexpr size_t kChunk = 500;
+    for (size_t base = 0; base < matchIdx.size(); base += kChunk) {
+        size_t stop = std::min(base + kChunk, matchIdx.size());
+        std::string inList;
+        for (size_t k = base; k < stop; k++) {
+            if (!inList.empty()) inList += ',';
+            inList += std::to_string(matchIdx[k] + 1);
         }
-        byName[name].push_back(idx);
+        auto q = db.query<int, std::string>(
+            "SELECT ROWID, format FROM song WHERE ROWID IN (" + inList + ")");
+        while (q.step()) {
+            int rowid;
+            std::string fmt;
+            tie(rowid, fmt) = q.get_tuple();
+            int idx = rowid - 1;
+            if (idx < 0 || idx >= (int)n) continue;
+            // Canonical group name: unwraps "Youtube (<tag>)" and resolves combos,
+            // so a capture lands on the same row as the native rips of its
+            // hardware. Arcade strings ("Arcade (Capcom)") carry no wrapper and no
+            // comma, so they pass through untouched into the vendor rules below.
+            std::string name = subPlatformName(fmt);
+            // The bare "Arcade" group sits alongside the vendor-specific ones
+            // (Arcade (Capcom), ...), so disambiguate it as "Arcade (Other)"; and
+            // fold Neo Geo in as another vendor-style "Arcade (Neo Geo)" group.
+            // modland's "Capcom Q-Sound Format" (.miniqsf CPS-1/CPS-2 rips) merges
+            // into the existing VGMRips-sourced "Arcade (Capcom)" group rather than
+            // forming a second Capcom row.
+            if (subPlatformByte == ARCADE) {
+                if (toLower(name) == "arcade") name = "Arcade (Other)";
+                else if (toLower(name) == "neo geo") name = "Arcade (Neo Geo)";
+                else if (toLower(name) == "capcom q-sound format")
+                    name = "Arcade (Capcom)";
+            }
+            byName[name].push_back(idx);
+        }
+    }
+
+    // Fold case-only spelling variants into one group. Collections disagree on
+    // the capitalisation of the same platform (smspower's "ColecoVision" vs
+    // modland's "Colecovision"), and grouping on the raw string used to show
+    // them as two adjacent duplicate rows -- the case-insensitive sort below put
+    // them side by side. Everywhere else this is already invisible, because
+    // formatToByte() lowercases before the format_map lookup; only this drill
+    // keys on the raw string, so only it can split. Display the byte-order-first
+    // variant, which prefers the interior capital ("ColecoVision" over
+    // "Colecovision", "DefleMask" over "Deflemask") -- i.e. the proper-noun
+    // spelling for every such pair we carry.
+    {
+        std::map<std::string, std::string> canon; // lowercased -> display name
+        for (auto const& kv : byName) {
+            auto key = toLower(kv.first);
+            auto it = canon.find(key);
+            if (it == canon.end() || kv.first < it->second) canon[key] = kv.first;
+        }
+        std::map<std::string, std::vector<int>> folded;
+        for (auto& kv : byName) {
+            auto& dst = folded[canon[toLower(kv.first)]];
+            dst.insert(dst.end(), kv.second.begin(), kv.second.end());
+        }
+        byName.swap(folded);
     }
 
     // Assign group ids in alphabetical (case-insensitive) name order, so the
@@ -3216,6 +4409,55 @@ void MusicDatabase::buildSubPlatforms()
         otherGroupCount.push_back((int)idxs.size());
         for (int i : idxs) otherIndexToGroup[i] = gid;
     }
+
+    // --- Family (2nd-level) grouping ------------------------------------------
+    // A few sub-platforms nest one level deeper under a byte-less "family" parent
+    // row, so the top menu shows e.g. one "Virtual Platforms" row that drills into
+    // TIC-80/PICO-8/MicroW8. The children keep the OTHER byte and their own logos;
+    // the parent is a pure menu node (no songs of its own) with a "<family>.png".
+    otherFamilyGids.clear();
+    otherTopRows.clear();
+    otherFamilyChildRows.clear();
+
+    // Split the real groups (emplaced above, gid == position) into top-level rows
+    // and per-family child buckets.
+    auto const& familyOf = subPlatformFamilyOf();
+    std::map<std::string, std::vector<int>> familyKids; // family name -> child gids
+    std::vector<std::pair<std::string, int>> topRows;   // (sort name, synth index)
+    for (int gid = 0; gid < (int)names.size(); gid++) {
+        auto fit = familyOf.find(toLower(names[gid]));
+        if (fit != familyOf.end())
+            familyKids[fit->second].push_back(gid);
+        else
+            topRows.emplace_back(names[gid], OTHER_PLATFORM_INDEX + gid);
+    }
+
+    // One synthetic parent per family that actually has children in this drill.
+    // Appended with a fresh gid; its count is the sum of its children's.
+    for (auto& [fam, kids] : familyKids) {
+        int pgid = (int)otherPlatformList.size();
+        int total = 0;
+        for (int k : kids) total += otherGroupCount[k];
+        otherPlatformList.emplace_back(pgid, fam);
+        otherGroupCount.push_back(total);
+        otherFamilyGids.insert(pgid);
+        std::sort(kids.begin(), kids.end(), [&](int a, int b) {
+            return toLower(names[a]) < toLower(names[b]);
+        });
+        std::vector<int> childRows;
+        for (int k : kids) childRows.push_back(OTHER_PLATFORM_INDEX + k);
+        otherFamilyChildRows[pgid] = std::move(childRows);
+        topRows.emplace_back(fam, OTHER_PLATFORM_INDEX + pgid);
+    }
+
+    // Top menu order: real rows + family parents interleaved alphabetically, with
+    // the same "Arcade (Other)" forced-last rule the group sort above uses.
+    std::sort(topRows.begin(), topRows.end(), [](auto const& a, auto const& b) {
+        bool ao = (a.first == "Arcade (Other)"), bo = (b.first == "Arcade (Other)");
+        if (ao != bo) return bo;
+        return toLower(a.first) < toLower(b.first);
+    });
+    for (auto& [nm, idx] : topRows) otherTopRows.push_back(idx);
 }
 
 int MusicDatabase::getOtherPlatformCount()
@@ -3223,7 +4465,7 @@ int MusicDatabase::getOtherPlatformCount()
     std::lock_guard lock{ dbMutex };
     subPlatformByte = OTHER;
     buildSubPlatforms();
-    return (int)otherPlatformList.size();
+    return (int)otherTopRows.size(); // top-menu rows (families count once)
 }
 
 int MusicDatabase::getArcadePlatformCount()
@@ -3231,7 +4473,7 @@ int MusicDatabase::getArcadePlatformCount()
     std::lock_guard lock{ dbMutex };
     subPlatformByte = ARCADE;
     buildSubPlatforms();
-    return (int)otherPlatformList.size();
+    return (int)otherTopRows.size(); // Arcade has no families: same as group count
 }
 
 // Compression/archive extensions that wrap a real module. They must never be
@@ -3337,10 +4579,10 @@ std::string MusicDatabase::describeFormat(SongInfo const& s)
             { "pico-8", "PICO-8 Fantasy Console" },
             { "microw8", "MicroW8 Fantasy Console" },
             { "mobile phone", "Misc Mobile Phone" },
-            { "ti-8x (z80)", "TI Calculator" },
-            { "ti-8x (68k)", "TI Calculator" },
-            { "gamepark gp32", "GamePark GP32" },
-            { "gamepark gp2x", "GamePark GP32" },
+            { "ti-8x (z80)", "TI-8x Calculator" },
+            { "ti-8x (68k)", "TI-8x Calculator" },
+            { "gamepark gp32", "GamePark" },
+            { "gamepark gp2x", "GamePark" },
         };
         std::string inner;
         auto open = s.format.find('(');
@@ -3361,15 +4603,12 @@ std::string MusicDatabase::describeFormat(SongInfo const& s)
     // skip the "(EXT)" suffix entirely and just label them "Podcast".
     if (b == PODCAST) return "Podcast";
 
-    // Atari 2600 (VCS / TIA) demoscene rips carry the verbose platform string
-    // "Atari 2600 Video Computer System (VCS)" and are bucketed under POKEY
-    // (Atari 8Bit) for the TAB filter -- but that string is a machine descriptor,
-    // not a tracker name, and the files are zip/gz/mp3 rips with no meaningful
-    // inner format. Surface the concise machine name (like YouTube/Podcast
-    // above), so it reads "Atari 2600" instead of the misleading
-    // "Atari XL/XE - Atari 2600 Video Computer System (VCS)".
-    if (toLower(s.format) == "atari 2600 video computer system (vcs)")
-        return "Atari 2600";
+    // Atari VCS rips carry the verbose machine descriptor "Atari 2600 Video
+    // Computer System (VCS)" as their format string, and are zip/gz/mp3 rips
+    // with no meaningful inner format. Show the bare platform name (like
+    // YouTube/Podcast above) rather than the redundant "Atari VCS - Atari 2600
+    // Video Computer System (VCS) (ZIP)".
+    if (b == ATARIVCS) return platformName(b);
 
     // Extension (uppercase, no dot). resolveExtension() gives the REAL inner
     // format, so a compressed song shows "(MOD)" not "(ZIP)" -- and never the
@@ -3424,18 +4663,11 @@ std::string MusicDatabase::describeFormat(SongInfo const& s)
         plat = platformName(b);
         name = s.format;
     }
-    // Atari Falcon sub-label. The YM2149 ST chiptune formats (sndh/ym/sc68/TCB/
-    // Hippel ST/Quartet/Special FX...) keep "Atari ST/STE", but the Falcon-native
-    // sample trackers -- Graoumf Tracker (.gtk), Digital Tracker (.dtm), Digi-Mix
-    // (.mix) -- show "Atari Falcon" instead. They stay the ATARI platform byte
-    // (same TAB "Atari ST/STE/Falcon" filter and classification); only the
-    // displayed platform word changes. Keyed on ext under b==ATARI, so the
-    // unrelated .dtm variants (DeFy AdLib / DigiTrekker) -- which classify as
-    // PC/AdLib, not ATARI -- are never relabelled. The Falcon logo is already
-    // handled separately by the per-extension screenshots (gtk/dtm/mix.png).
-    if (b == ATARI && (ext == "GTK" || ext == "DTM" || ext == "MIX")) {
-        plat = "Atari Falcon";
-    }
+    // (The Atari Falcon sub-label that used to sit here -- relabelling .gtk/.dtm/
+    // .mix under b==ATARI to "Atari Falcon" -- is gone: those tunes now carry the
+    // ATARIFALCON byte, so platformName(b) above already says "Atari Falcon" and
+    // they are filterable as Falcon rather than merely labelled. See the ext rule
+    // at the end of formatToByte.)
 
     if (b == APPLEMAC && ext == "MAD") {
         plat = "Macintosh";
@@ -3488,10 +4720,14 @@ std::string MusicDatabase::describeExtension(std::string const& ext)
                 auto tab = lines[i].find('\t');
                 if (tab == std::string::npos) continue; // desc / blank line
                 std::string key = toLower(lines[i].substr(0, tab));
-                std::string combined = lines[i].substr(tab + 1);
+                std::string name = lines[i].substr(tab + 1);
+                std::string combined = name;
                 if (i + 1 < lines.size() && !lines[i + 1].empty())
                     combined += " - " + lines[i + 1];
                 formatDescriptions[key] = combined;
+                // The bare line-1 name field (no prose), for the Formats screen's
+                // per-extension label. Keyed identically (lowercased).
+                formatNames[key] = name;
             }
             LOGD("Loaded %d format descriptions",
                  (int)formatDescriptions.size());
@@ -3499,6 +4735,15 @@ std::string MusicDatabase::describeExtension(std::string const& ext)
     }
     auto it = formatDescriptions.find(toLower(ext));
     return it == formatDescriptions.end() ? "" : it->second;
+}
+
+std::string MusicDatabase::extensionName(std::string const& ext)
+{
+    // Share describeExtension()'s lazy load (which also fills formatNames); the
+    // return value is ignored, we only need the side effect.
+    if (!formatDescriptionsLoaded) describeExtension(ext);
+    auto it = formatNames.find(toLower(ext));
+    return it == formatNames.end() ? "" : it->second;
 }
 
 template <typename T> static void readVector(std::vector<T>& v, apone::File& f)
@@ -3673,6 +4918,18 @@ void MusicDatabase::generateIndex()
     int unexoticaColl = collId("unexotica"); // Amiga games music (mp3 rips)
     int zxartColl = collId("zxart");         // ZX tunes rendered to ogg
 
+    // ROWID -> collection id, so the loop below can name the collection each row
+    // belongs to on the startup progress screen.
+    std::unordered_map<int, std::string> collNames;
+    try {
+        auto cq = db.query<int, std::string>("SELECT ROWID, id FROM collection");
+        while (cq.step()) {
+            auto [rowid, cid] = cq.get_tuple();
+            collNames[rowid] = cid;
+        }
+    } catch (...) {}
+    int lastNamedColl = -1;
+
     int count = 0;
     // int maxTotal = 3;
     int cindex = 0;
@@ -3724,6 +4981,13 @@ void MusicDatabase::generateIndex()
 
         tie(title, game, fmt, composer, path, collection, ext) =
             query.get_tuple();
+
+        // Name the collection under the progress bar as the rows roll past.
+        if (collection != lastNamedColl) {
+            lastNamedColl = collection;
+            auto cn = collNames.find(collection);
+            setIndexingName(cn != collNames.end() ? cn->second : std::string());
+        }
 
         // Real-format token for the search dedup key (see add_unique).
         formatKey.push_back(internExt(ext, path));
@@ -3862,6 +5126,7 @@ void MusicDatabase::generateIndex()
 
     writeIndex(apone::File{ indexPath, apone::File::Write });
 
+    setIndexingName("");
     reindexNeeded = false;
 }
 
@@ -3872,6 +5137,7 @@ void MusicDatabase::initFromLuaAsync(utils::path const& workDir)
     reindexingNow.store(false, std::memory_order_relaxed);
     indexedCount.store(0, std::memory_order_relaxed);
     dbCreatedCount.store(0, std::memory_order_relaxed);
+    setIndexingName("");
     initFuture = std::async(std::launch::async, [=]() {
         std::lock_guard lock{ dbMutex };
         if (!initFromLua(workDir)) {
@@ -4076,6 +5342,11 @@ bool MusicDatabase::initFromLua(utils::path const& workDir)
     }
 
     generateIndex();
+    // Precompute the alphabetical title rank now, on this (background) indexing
+    // thread, so the first filter selection is instant instead of paying a
+    // one-off sort. titleIndex is fully populated by generateIndex() whether it
+    // built fresh or loaded the cached index.
+    buildTitleRank();
     return true;
 }
 
@@ -4135,6 +5406,19 @@ void MusicDatabase::addToPlaylist(std::string const& plist,
     }
 }
 
+void MusicDatabase::clearPlaylist(std::string const& plist)
+{
+    for (auto& pl : playLists) {
+        if (pl.name == plist) {
+            pl.songs.clear();
+            // save() rewrites the file from `songs`, so an empty list truncates
+            // it -- the clear survives a restart.
+            pl.save();
+            break;
+        }
+    }
+}
+
 void MusicDatabase::removeFromPlaylist(std::string const& plist,
                                        SongInfo const& toRemove)
 {
@@ -4162,6 +5446,36 @@ std::vector<SongInfo>& MusicDatabase::getPlaylist(std::string const& plist)
         if (pl.name == plist) return pl.songs;
     }
     return empty;
+}
+
+void MusicDatabase::createPlaylist(std::string const& name,
+                                   std::vector<SongInfo> const& songs)
+{
+    auto path = Environment::getConfigDir() / "playlists" / name;
+    playLists.emplace_back(path); // Playlist(path): no file yet, songs empty
+    playLists.back().songs = songs;
+    playLists.back().save();      // writes the file so it survives a restart
+}
+
+void MusicDatabase::deletePlaylist(std::string const& name)
+{
+    for (auto it = playLists.begin(); it != playLists.end(); ++it) {
+        if (it->name == name) {
+            std::error_code ec;
+            std::filesystem::remove(it->fileName, ec);
+            playLists.erase(it);
+            return;
+        }
+    }
+}
+
+std::vector<std::string> MusicDatabase::playlistNames() const
+{
+    std::vector<std::string> names;
+    names.reserve(playLists.size());
+    for (auto const& pl : playLists)
+        names.push_back(pl.name);
+    return names;
 }
 } // namespace chipmachine
 

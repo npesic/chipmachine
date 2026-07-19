@@ -10,7 +10,7 @@ But this is far more than a simple port!
 
 While ensuring the player runs on modern Apple hardware, my passion for it has expanded its compatibility and scale:
 
-* [60+ plugins](https://github.com/mihailod/musicplayer/tree/master/src/plugins) supporting [350+ music formats](data/misc/formats_descriptions.txt)
+* [60+ plugins](https://github.com/mihailod/chipmachine/tree/master/external/musicplayer/src/plugins) supporting [350+ music formats](data/misc/formats_descriptions.txt)
 * [~770,000](data) indexed songs (~100,000 annotaded with screenshots) and counting
 
 **The mission statement: support every single format and index all retro/chip music databases.**
@@ -19,9 +19,10 @@ Despite the massive expansion under the hood, the core experience remains untouc
 
 **(Screenshots might show features from dev in progress (not released) code.)**
 [![Screenshot](data/misc/amegas.png)](https://youtu.be/WsNhwxY1c08)
-**(Screenshots might show features from dev in progress (not released) code.)**
 [![Screenshot](data/misc/formats.png)](https://youtu.be/WsNhwxY1c08)
-**(Screenshots might show features from dev in progress (not released) code.)**
+[![Screenshot](data/misc/extensions.png)](https://youtu.be/WsNhwxY1c08)
+[![Screenshot](data/misc/dbs.png)](https://youtu.be/WsNhwxY1c08)
+[![Screenshot](data/misc/plugins.png)](https://youtu.be/WsNhwxY1c08)
 [![Screenshot](data/misc/search.png)](https://youtu.be/WsNhwxY1c08)
 
 ## Intro
@@ -66,6 +67,21 @@ To authorize and run the application on your Mac, follow these steps:
 
 *Note: You only need to perform this authorization once per release. Subsequent launches will boot instantly.*
 
+### Opening local music files
+
+Once installed, ChipMachineAS registers with macOS as a player for the hundreds of formats it supports, and you can open a local song three ways:
+
+* **Right-click a file → Open With → ChipMachineAS** (or double-click a file you've made it the default for)
+* **Drag and drop a file onto the ChipMachineAS icon** (Dock or Finder)
+* **Drag and drop a file straight into the running ChipMachineAS window**
+
+All three play the track immediately.
+
+This is deliberately polite — ChipMachineAS advertises itself as an *alternate* handler and never hijacks files from a player you already use:
+
+* For common audio types (`.mp3`, `.wav`, `.flac`, …) it appears as an option in **Open With** but never becomes the default unless you explicitly choose it via **Get Info → Open with → Change All**.
+* For obscure chip/tracker formats that nothing else on your Mac opens, it becomes the de-facto player and shows its own document icon in Finder.
+
 ## Prerequisites for development (Tested on macOS 26 / Tahoe only)
 
 * Make sure you have Homebrew installed (Apple Silicon homebrew in /opt/homebrew/ , make sure you are not using Intel legacy /usr/local tools)
@@ -85,8 +101,18 @@ ninja
 
 * Running the app (from the build folder): ./chipmachine (-h for all options)
 * Running the tests (from the build folder): ./cmtest
-* Packaging the app: [package_app.sh](package_app.sh)
+* Packaging the app: [package_app.sh](package_app.sh) — rebuilds the `chipmachine` target (incremental), bundles the runtime assets, generates the `Info.plist` with file associations, code-signs and zips the `.app`.
 * AI tools used to help with the porting: Claude, Gemini, Antigravity, Codex
+
+### macOS file associations (developer notes)
+
+The `.app` advertises the formats it can play as macOS file associations (see the [user-facing note above](#opening-local-music-files)). All the platform-native macOS glue lives under [src/macnative/](src/macnative/):
+
+* **`gen_info_plist.sh`** — the single source of the bundle's `Info.plist`. It builds the file-association document types from three inputs: `extensions.txt` (the full playable-extension union, dumped from the built binary via `chipmachine --dump-extensions`), `MacOSSystemTypeExtensions.txt` (formats with an existing system UTI — referenced politely at `LSHandlerRank=Alternate`, never redefined) and `MacOSHandlerDenyList.txt` (non-extension junk / dangerous tokens to drop). Everything else is exported under one umbrella UTI (`org.mihailod.chipmachineas.chiptune`) with the app's document icon. The last two `.txt` files are hand-editable.
+* **`FileOpenHandler.mm`** — patches GLFW's app delegate (`GLFWApplicationDelegate`) at runtime to implement `application:openURLs:`, so double-click / "Open With" / icon drag-and-drop actually play the file (Finder does **not** pass files on `argv`, and this must win the race against GLFW's own `[NSApp run]` inside `glfwInit()`). Dropping a file into the running window instead goes through GLFW's native `glfwSetDropCallback` (wired in the vendored `external/apone/mods/grappix`) — cross-platform, no Apple Event involved. Both paths feed the same play queue.
+* **`dev_update_doctypes.sh`** — fast, no-recompile test loop: rewrites the `Info.plist` in an existing bundle, re-signs it and re-registers it with LaunchServices in a couple of seconds. Pass `--with-binary` to also swap in the freshly-built executable and test double-click playback end-to-end. Run with `--help` for full usage.
+
+`package_app.sh` invokes the generator automatically, so a normal release needs no extra steps.
 
 ## Using the application
 
@@ -193,11 +219,13 @@ Support for PC and Amiga tracker formats
 * ProTracker, ScreamTracker III, FastTracker II, Impulse Tracker, OpenMPT, ScreamTracker II, NoiseTracker, Soundtracker, Mod's Grave, UltraTracker, Composer 669 / UNIS 669, MultiTracker, OctaMed, Farandole Composer, DigiTracker, Extreme's Tracker, Velvet Studio, DSIK Format, DSMI, ASYLUM, Oktalyzer, X-Tracker, PolyTracker, Epic Megagames, MASI, MadTracker 2, DigiBooster Pro, DigiBooster, Imago Orpheus, Galaxy Sound System
 * **New with the 0.8.7 upgrade:** Symphonie / Symphonie Pro (Amiga "pseudo-DAW" with software mixer + real-time echo DSP), Digital Symphony, Face The Music, Graoumf Tracker 1 & 2, TCB Tracker, Real Tracker, Astroidea XMF, Composer 667, EasyTrax, FM Tracker, CBA
 
-Extensions: `.mod` `.xm` `.it` `.s3m` `.mptm` `.stm` `.nst` `.m15` `.stk` `.wow` `.ult` `.669` `.mtm` `.med` `.far` `.mdl` `.ams` `.dsm` `.amf` `.okt` `.omf` `.dmf` `.mt2` `.dbm` `.digi` `.imf` `.j2b` `.gdm` `.umx` `.mo3` `.symmod` `.dsym` `.ftm` `.gt2` `.gtk` `.tcb` `.rtm` `.xmf` `.667` `.etx` `.fmt` `.cba` `.c67` `.fst` `.ice` `.mmcmp` `.mms` `.mus` `.oxm` `.plm` `.ppm` `.psm` `.pt36` `.ptm` `.sfx` `.sfx2` `.stp` `.stx` `.xpk`
+Extensions: `.mod` `.xm` `.it` `.s3m` `.mptm` `.stm` `.nst` `.m15` `.stk` `.wow` `.ult` `.669` `.mtm` `.med` `.far` `.mdl` `.ams` `.dsm` `.amf` `.okt` `.omf` `.dmf` `.mt2` `.dbm` `.digi` `.imf` `.j2b` `.gdm` `.umx` `.mo3` `.symmod` `.dsym` `.dsyn` `.dysn` `.ftm` `.gt2` `.gtk` `.tcb` `.rtm` `.xmf` `.667` `.etx` `.fmt` `.cba` `.c67` `.fst` `.ice` `.mmcmp` `.mms` `.mus` `.oxm` `.plm` `.ppm` `.psm` `.pt36` `.ptm` `.sfx` `.sfx2` `.stp` `.stx` `.xpk`
 
 (`.mus`, `.psm` and `.stp` are shared extensions: libopenmpt claims them, but a SID `.mus` falls through to libvice, a ZX `.psm`/`.stp` to ZXTune/Ayfly — routing is by content.)
 
 > Note: `.dsm` covers three unrelated DSIK/Dynamic-Studio variants. libopenmpt natively plays the newer DSIK "RIFF" format (`RIFF…DSMF`) and Dynamic Studio (`DSm`), but not the original DSIK "old" Internal Format (`DSM` + 0x10, e.g. the Necros tunes). Support for that v1 variant was added in a local patch to the vendored libopenmpt `Load_dsm.cpp`, with the loader adapted from MilkyTracker's `LoaderDSMv1` (BSD-3-Clause).
+
+> Note: `.dsyn` and `.dysn` are **Digital Symphony** under modland's misspelled extensions. Almost all of the `Digital Symphony/` corpus is `.dsym` (which libopenmpt advertises), but 8 files in one composer dir are named `.dsyn`/`.dysn` and so routed to no plugin at all. The bytes are ordinary Digital Symphony, and libopenmpt's `Load_dsym` decodes them unchanged, so `OpenMPTPlugin::canHandle` claims both spellings — gated on the loader's own magic (`\x02\x01\x13\x13\x14\x12\x01\x0B`), so a misnamed non-DSym file skips cleanly instead of hard-failing.
 
 > Note: `.omf` (**Onyx Music File**) is a MOD-like Amiga format from the 1993 musicdisk *Jangle* by Onyx (the modland `Onyx Music File/` corpus, 24 tunes). It never had a standalone replayer — the tunes were only playable through the original musicdisk executable. Playback reuses libopenmpt's existing MOD engine.
 
@@ -409,6 +437,12 @@ Support for **SBStudio**, a sample-based MS-DOS tracker by Henning Hellstroem (e
 
 Extensions: `.pac`
 
+### Funktracker (MS-DOS)
+
+Support for **Funktracker** by Elias Ehlin (1994-96), shipped as *FunktrackerGOLD* and *Funktracker DOS32* — a sample tracker aimed at funk/hiphop, with 4–32 channels. Playback uses libxmp's `fnk_loader`, compiled as a minimal single-loader slice (the same approach as Archimedes Tracker / Coconizer / Megatracker above).
+
+Extensions: `.fnk`
+
 ### MaxTrax (Amiga)
 
 Support for **MaxTrax**, a commercial custom Amiga sound engine (multiple packing subformats)
@@ -514,6 +548,18 @@ Support for Commodore 264 series (16 / 116 / Plus/4) TED chip music
 
 Extensions: `.prg`
 
+### Vic-Tracker (Commodore VIC-20)
+
+Support for **Commodore VIC-20** music (the modland "Vic-Tracker" corpus) in Daniel Kahlin's VIC-TRACKER format. Each `.vt` file is a VIC-20 PRG (a `$3300` load address plus a `T1`/`T0` tune struct) that the tracker's own 6502 replay routine interprets in place; that original routine runs on an embedded 6502 core, with its VIC-I (`$900A`–`$900E`) sound-register writes driving the VIC-20 sound emulation lifted from VICE. Multi-song tunes are exposed as subsongs.
+
+Extensions: `.vt`
+
+### Klystrack
+
+Support for **klystrack** tunes (the modland "Klystrack" corpus) — chiptunes authored in Tero Lindeman's *klystrack* tracker and rendered by its own *klystron* "cyd" software synth (pulse/saw/noise/triangle oscillators, a wavetable, an FM operator, filters and effects). Each `.kt` file carries a `cyd!song` signature followed by the pattern/instrument data; playback drives the engine's bundled **libksnd** library synchronously, with song length derived from the tracker's own play-time table.
+
+Extensions: `.kt`
+
 ### FFMpeg
 
 Support for streaming audio (AAC and Ogg/Vorbis)
@@ -529,6 +575,19 @@ Extensions: `.v2` `.v2m`
 ### YouTube
 
 Streams audio directly from YouTube links (`youtube.com/` / `youtu.be/`). The bundled `yt-dlp` resolves the best audio stream, which is then played back via FFMpeg. This is how the Pouet database plays demoscene production soundtracks.
+
+### Formats we deliberately skip
+
+The collections we index are not curated for us: they carry files that no player in this stack can turn into sound. If those were indexed they would look like ordinary songs, download on ENTER, and then dead-end — so the indexer drops them up front, and the format simply never appears in search. That is why a handful of directories you can see on modland (or a scene.org compo dir) have no entries here.
+
+The list lives in **[`data/misc/not_supported_extensions.txt`](data/misc/not_supported_extensions.txt)** — one extension per line, matched against the extension a song would actually route on. Roughly, the entries are:
+
+* **No open replayer exists.** Closed or undocumented engines where the module carries no sample data and playback needs the original synth — Renoise (`.rns`/`.xrns`), Psycle (`.psy`), Jeskola Buzz (`.bmx`), Sound Club (`.sn`), Picatune (`.smufi`), BeRoTracker (`.brt`), StoneTracker (`.spm`/`.sps`).
+* **Not music files at all.** Compo entries submitted as archives (`.arj`, `.lzx`, `.xz`), DAW projects (`.flp`), and executables / ROMs / disk images whose music only exists by *running* the machine — `.exe`, `.d64`, `.nes`, `.gen`, `.tap`. (We play the ripped chip logs — `.nsf`, `.gbs`, `.vgm`, `.sid` — never the parent ROM.)
+* **Companion files, not songs.** Sample banks and shared libs that sit next to a tune and are already fetched automatically as secondary files — Quartet's `.set`, PSF2's `.psf2lib`, MusicMaker's `.ip`, stale `.bak` saves.
+* **Tested and rejected.** Formats where an engine *looked* like it would work and measurably did not. These carry the evidence inline so the idea is not retried: EdLib `.d01` (AdPlug's D00 loader rejects it two independent ways, even renamed), Liquid Tracker `.liq` (libxmp's loader desyncs on 5 of 13 tunes and `abort()`s the app), 0CC-FamiTracker `.0cc` (~50% unsupported instruments, ~10% hard crash).
+
+Every line is commented with what the format is, what was tried, and what would change the verdict. Entries that are documented but still *playable* stay commented out (they remain indexed) — so the file doubles as the running triage log. If a replayer lands, deleting one line is usually the whole fix.
 
 ---
 
@@ -595,6 +654,8 @@ Here is the attribution for the individual emulators, audio players, plugins, an
 * **MikMod UNITRK / UNIMOD (`.uni`):** the UNIMOD on-disk format and its reader are part of **libmikmod**, originally by Jean-Paul Mikkers ("MikMak") and Jake Stine, maintained by the libmikmod team (Raphaël Assenat, Ozkan Sezer and others). A minimal slice of libmikmod 3.3.13 is vendored at `musicplayer/src/plugins/mikmodplugin/libmikmod/` (player core + virtual mixer + `load_uni` + depackers + null driver only). Licensed under LGPL-2.1-or-later. The vendored sources are unmodified; the chipmachine glue registers only the UNI loader and null driver and pulls PCM via the virtual mixer.
 * **Ixalance (`.ixs`):** the format and its original Win32 player are by **Shortcut Software Development BV** (~2000); the music is by **Maarten van Strien**. The original sources are lost, so playback uses **webixs** — Juergen Wothke's native C++ reimplementation reverse-engineered with Ghidra from the surviving Win32 player (`https://bitbucket.org/wothke/webixs`), vendored at repo-root `webixs/` and built with `-DLINUX` (the non-Win32 path) so its pull-style render API is exposed. The format synthesizes and zlib-compresses its own wavetables, hence the zlib dependency. **Licensed CC BY-NC-SA 4.0 (NonCommercial)** — the only NonCommercial component in the project; see `webixs/LICENSE`. (Built with `-fsigned-char`, like PlayerPRO, since the decompiled code relies on signed-char semantics.)
 * **vgmstream (streamed game audio):** the library that decodes hundreds of console/PC streamed game-audio containers (CRI ADX/HCA, FMOD FSB, Microsoft XWB/XMA, platform DSP/VAG/AT3/AT9, …) by **Adam Gashlin**, **bnnm**, **Christopher Snowhill**, NicknineTheEagle, bxaimc, Thealexbarney, EdnessP and the vgmstream contributors (<https://github.com/vgmstream/vgmstream>). The core decode library is vendored at `external/vgmstream/` and driven through its `libvgmstream` API, built without any of the optional `VGM_USE_*` codec libraries. `canHandle` content/extension-gates against the formats already owned by other plugins. Licensed under the **ISC License** (some bundled codec sources carry their own permissive/public-domain notices; see `external/vgmstream/COPYING`).
+* **Vic-Tracker (Commodore VIC-20):** VIC-TRACKER and its `.vt` format are by **Daniel Kahlin** (1994/2004; `http://www.kahlin.net/daniel/victracker/`). The tunes are played by Kahlin's own 6502 replay routine (`player.asm`), vendored pre-assembled and **licensed under BSD-2-Clause** (see `victrackerplugin/victracker/LICENSE.txt`). It runs on the **fake6502** CPU core by Mike Chambers (omarandlorraine fork, GPL-2.0), and its VIC-I (MOS 6560/6561) sound-register writes drive the VIC-20 sound core extracted from **VICE**'s `vic20/vic20sound.c` (by Rami Räsänen and Ville-Matias Heikkilä, GPL-2.0-or-later).
+* **Klystrack:** *klystrack* and its `.kt` format, together with the *klystron* engine and its **libksnd** playback library, are by **Tero Lindeman** ("kometbomb"; `https://github.com/kometbomb/klystron`). The `snd/` "cyd" synth core and `lib/ksnd.c` are vendored at `klystrackplugin/klystron/` and built SDL-free — driven via `KSND_CreatePlayerUnregistered`/`KSND_FillBuffer` with `NOSDL_MIXER` and without the SDL mutex/RWops paths, so a small local shim (`klystron/shim/`) supplies only SDL's integer/endian types. **Licensed under the MIT License** (see the notice in `klystrackplugin/klystron/macros.h`).
 
 ---
 

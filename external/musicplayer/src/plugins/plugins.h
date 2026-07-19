@@ -45,6 +45,7 @@
 #include "ixsplugin/IXSPlugin.h"
 #endif
 #include "musxplugin/MusxPlugin.h"
+#include "fnkplugin/FnkPlugin.h"
 #include "cocoplugin/CocoPlugin.h"
 #include "mgtplugin/MgtPlugin.h"
 #include "medplugin/MedPlugin.h"
@@ -65,5 +66,7 @@
 #include "famitrackerplugin/FamiTrackerPlugin.h"
 #include "goattrackerplugin/GoatTrackerPlugin.h"
 #include "vgmstreamplugin/VGMStreamPlugin.h"
+#include "victrackerplugin/VTPlugin.h"
+#include "klystrackplugin/KlystrackPlugin.h"
 
 

@@ -137,10 +137,6 @@ if(NOT WINDOWS)
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -DCM_DEBUG")
 endif()
 
-if(SAN)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=${SAN}")
-endif()
-
 # ---------------------------------------------------------------------------
 # Subdirectories & Dependency Layout (Processed early)
 # ---------------------------------------------------------------------------
@@ -181,8 +177,9 @@ set(MUSICPLAYER_PLUGINS
     ffmpegplugin uadeplugin fmpplugin pxtoneplugin ptkplugin orgplugin sunvoxplugin eupplugin
     kssplugin quartetplugin wsrplugin zxtuneplugin pokeynoiseplugin bbsongplugin
     soundsmithplugin musxplugin cocoplugin mgtplugin medplugin sbstudioplugin maxtraxplugin sksplugin nedplugin sccmusixxplugin
-    playerproplugin jxsplugin monotoneplugin mikmodplugin ixsplugin copplugin
+    playerproplugin jxsplugin monotoneplugin mikmodplugin ixsplugin copplugin fnkplugin
     famitrackerplugin goattrackerplugin dmfplugin libvgmplugin vgmstreamplugin
+    victrackerplugin klystrackplugin
 )
 
 # Plugins that do not (yet) build on Windows/MinGW: niche, reverse-engineered, or
@@ -231,6 +228,12 @@ add_subdirectory(${MUSICPLAYER}/src/plugins plugins)
 add_subdirectory(${MUSICPLAYER}/src/psf psf)
 
 include_directories(${AP1_ROOT}/mods/grappix ${MUSICPLAYER}/plugins)
+
+# Put src/ on the header search path so platform-native sources living in
+# subdirectories (e.g. src/macnative/*.mm) can include the shared app headers
+# ("ChipMachine.h", "version.h", ...) with plain quotes, exactly as the
+# top-level src/*.cpp files do by same-directory resolution.
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # liblhasa (vendored under zxtune) decompresses the .lha archives that the
 # UnExoticA collection ships its tunes in. The `lhasa` static-lib target is
@@ -316,11 +319,17 @@ endif()
 #     called only from the GUI (ChipMachine_commands.cpp). Its stub #includes
 #     ChipMachine.h, which drags in grappix (and thus GL/GLEW headers), so keeping
 #     it out of cm lets the text-mode build compile with NO OpenGL dependency.
-# The macOS implementations are Objective-C (AppKit/Foundation); other platforms
-# compile C++ stubs providing the same symbols.
+#   - FileOpenHandler (GUI_PLATFORM_GLUE_FILES, Apple only): the Finder
+#     "Open With"/double-click (kAEOpenDocuments) handler. Unlike the two above it
+#     needs NO non-Apple stub -- every call site is wrapped in `#ifdef __APPLE__`
+#     (src/main.cpp, src/ChipMachine.cpp), and both are additionally inside
+#     `#ifndef TEXTMODE_ONLY`, so it is GUI-only as well as Apple-only.
+# The macOS implementations are Objective-C (AppKit/Foundation) and live under
+# src/macnative/; other platforms compile C++ stubs providing the same symbols.
 if(APPLE)
-    set(PLATFORM_GLUE_FILES     src/CheckForUpdate.mm)
-    set(GUI_PLATFORM_GLUE_FILES src/NativeDialogs.mm)
+    set(PLATFORM_GLUE_FILES     src/macnative/CheckForUpdate.mm)
+    set(GUI_PLATFORM_GLUE_FILES src/macnative/NativeDialogs.mm
+                                src/macnative/FileOpenHandler.mm)
 else()
     set(PLATFORM_GLUE_FILES     src/CheckForUpdate_stub.cpp)
     set(GUI_PLATFORM_GLUE_FILES src/NativeDialogs_stub.cpp)
@@ -555,4 +564,40 @@ if(APPLE)
        fixup_bundle(\"\${APPS}\" \"\" \"\$\\\{DIRS\}\")
        file(COPY \"\${CMAKE_SOURCE_DIR}/bin/ffmpeg\" DESTINATION Chipmachine.app/Contents/Resources/bin/)
        " COMPONENT Runtime)
+endif()
+
+# ---------------------------------------------------------------------------
+# Build timer: print total wall-clock time at the very end of a `ninja` build.
+#
+# `build_timer_start` has no dependencies, so Ninja schedules it in the first
+# wave and it stamps the start epoch. `build_timer_end` depends on every app
+# target, so it runs last and prints the elapsed time. Both are ALL targets and
+# always out of date (no file outputs), so a default `ninja` always prints a
+# timing line -- meaning it no longer short-circuits to "no work to do". Doing it
+# silently-on-no-op is only possible with a shell wrapper around ninja, which we
+# deliberately avoid; this always-print tradeoff is accepted. Neither target is a
+# dependency OF the app targets, so this never forces a relink.
+#
+# Note: a targeted build (e.g. `ninja chipmachine` / `cmake --build --target
+# chipmachine`, as package_app.sh uses) does NOT pull in these ALL targets, so
+# no line prints there -- package_app.sh does its own end-to-end timing instead.
+# ---------------------------------------------------------------------------
+if(UNIX)
+    set(_BUILD_TIMER_STAMP "${CMAKE_BINARY_DIR}/.build_start_epoch")
+    add_custom_target(build_timer_start ALL
+        COMMAND sh -c "date +%s > '${_BUILD_TIMER_STAMP}'"
+        COMMENT "Build timer started"
+        VERBATIM)
+    add_custom_target(build_timer_end ALL
+        COMMAND sh -c "if [ -f '${_BUILD_TIMER_STAMP}' ]; then _s=$(cat '${_BUILD_TIMER_STAMP}'); _e=$(date +%s); _d=$((_e - _s)); printf '=== Build finished in %dm %02ds ===\\n' $((_d / 60)) $((_d % 60)); fi"
+        COMMENT "Build time"
+        VERBATIM)
+    # end must run AFTER start (to read a fresh stamp) and after every app target
+    # (so it is genuinely last). start has no deps, so it runs in the first wave.
+    add_dependencies(build_timer_end build_timer_start)
+    foreach(_timed_target chipmachine cm cmtest mksonglist)
+        if(TARGET ${_timed_target})
+            add_dependencies(build_timer_end ${_timed_target})
+        endif()
+    endforeach()
 endif()

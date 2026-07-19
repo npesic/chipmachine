@@ -265,15 +265,35 @@ size_t WebJob::writeFunc(void *ptr, size_t size, size_t x, void *userdata) {
 		return -1;
 	}
 
-	if(job->targetFile) {
-		job->targetFile.write(static_cast<uint8_t*>(ptr), size);
-	} else if(job->streamCb) {
-		if(!job->streamCb(*job, static_cast<uint8_t*>(ptr), size))
-			return -1;
-	} else {
-		unsigned pos = job->data.size();
-		job->data.resize(pos + size);
-		memcpy(&job->data[pos], ptr, size);
+	// libcurl calls this from its own C stack, so nothing here may throw: an
+	// escaping exception unwinds through C frames straight into std::terminate
+	// and aborts the whole app. File::write() DOES throw (io_exception) when the
+	// cache file cannot be opened, which killed ChipMachine mid-shuffle. Contain
+	// it and report a short write instead -- curl turns that into
+	// CURLE_WRITE_ERROR, failing just this transfer, so the song reports an error
+	// and playback carries on.
+	try {
+		if(job->targetFile) {
+			job->targetFile.write(static_cast<uint8_t*>(ptr), size);
+		} else if(job->streamCb) {
+			if(!job->streamCb(*job, static_cast<uint8_t*>(ptr), size))
+				return -1;
+		} else {
+			unsigned pos = job->data.size();
+			job->data.resize(pos + size);
+			memcpy(&job->data[pos], ptr, size);
+		}
+	} catch(const std::exception &e) {
+		// The message carries the offending path and the errno reason (see
+		// File::open) -- the only record of WHY, since the throw used to abort
+		// before anything could report it.
+		LOGE("Download write failed, aborting transfer of '%s': %s", job->url,
+		     e.what());
+		return 0;
+	} catch(...) {
+		LOGE("Download write failed, aborting transfer of '%s': unknown error",
+		     job->url);
+		return 0;
 	}
 	return size;
 }
@@ -324,12 +344,18 @@ size_t WebJob::headerFunc(char *text, size_t size, size_t n, void *userdata) {
 		try { job->cLength = std::stol(val); } catch(...) {}
 	} else
 	if(name== "Location") {
-		std::string newUrl = val;
-		LOGD("Redirecting to %s", newUrl);
-		std::string newTarget = utils::urlencode(newUrl, ":/\\?;");
-#ifndef _WIN32
-		symlink(newTarget.c_str(), job->targetFile.getName().c_str());
-#endif
+		// Log only. curl follows redirects itself (CURLOPT_FOLLOWLOCATION) and
+		// writes the final body to the original targetFile, so we do NOT act on
+		// Location here.
+		//
+		// Previously this planted a symlink at the .download write target pointing
+		// to the urlencoded redirect URL as a single path component. Nothing ever
+		// read those symlinks (no readlink() anywhere), and when the redirect URL
+		// encoded past NAME_MAX (255 bytes) -- e.g. archive.org's
+		// view_archive.php?archive=...&file=... links -- the next body write would
+		// open() the dangling symlink, follow it to the over-long target name, and
+		// fail with ENAMETOOLONG ("File name too long"), aborting the download.
+		LOGD("Redirecting to %s", val);
 	}
 
 	return total;

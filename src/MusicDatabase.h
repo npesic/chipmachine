@@ -96,7 +96,8 @@ enum Formats
     PODCAST, // Podcast episodes (RSS feeds / archive.org rips; "podcast" type)
 
     PC,
-    JPFM, // Japanese FM computers: NEC PC-98, Sharp X68000, Fujitsu FM Towns
+    JPFM, // NEC PC-98 (FMP/PMD/S98 drivers). Was "Japanese FM computers"; the
+          // X68000 and FM Towns members split into JPX68000/JPFMTOWNS below.
 
     ADPLUG,
 
@@ -138,7 +139,47 @@ enum Formats
     // PRODUCT as the max byte, and getFormatByteCounts()/formatColor cover 0..255.
     APPLEMAC, // Original Apple Macintosh (classic Mac OS trackers, PlayerPRO .mad)
     MACOS,    // Mac OS / macOS (PPC + Intel)
-    IOS       // Apple iOS
+    IOS,      // Apple iOS
+
+    // Nintendo Virtual Boy (VSU). Placed here for the same reason as the Apple
+    // block: the console region above is full up to the fixed TRACKER=0x30
+    // anchor. Sources are the VGMRips VSU logs (which only libvgm decodes -- see
+    // vgm_opl_detect.h) plus pouet's "Youtube (Virtual Boy)" captures.
+    VIRTUALBOY,
+
+    // The Atari machines that used to be folded into ATARI (Falcon, Jaguar) or
+    // POKEY (VCS/TIA) or OTHER (7800, Lynx), split out so the TAB "Atari" group
+    // can drill into all seven. Placed here for the same reason as the Apple and
+    // Virtual Boy blocks above -- the console region is full up to the fixed
+    // TRACKER=0x30 anchor -- and nothing caps at PRODUCT=0x40.
+    //
+    // NOTE for any future "Atari <machine>" format string: formatToByte has a
+    // startsWith(f, "atari") -> ATARI fallback, so a new machine MUST get an
+    // explicit format_map entry or it silently lands in the ST/STE/TT filter.
+    ATARIVCS,    // Atari 2600 / VCS (TIA)
+    ATARI7800,   // Atari 7800 (TIA + POKEY cart)
+    ATARIFALCON, // Atari Falcon 030 (DSP sample trackers: .gtk/.dtm/.mix)
+    ATARILYNX,   // Atari Lynx (handheld)
+    ATARIJAGUAR, // Atari Jaguar (mostly rips, no native chip format)
+
+    // The Japanese FM computers, split so the TAB "Japanese Computers" group can
+    // drill into all three (was one JPFM byte behind the "PC-98/X68000/FM Towns"
+    // hack row). JPFM is repurposed to mean NEC PC-98 specifically (the archetypal
+    // Japanese FM machine: FMP/PMD/S98 drivers), the same way APPLE narrowed to
+    // Apple IIGS when the Apple group was split. These two are the other members.
+    JPX68000,  // Sharp X68000 (MDX; Sharp X1 folds in)
+    JPFMTOWNS, // Fujitsu FM Towns (Euphony .eup; Fujitsu FM-7 folds in)
+
+    // Commodore VIC-20 (MOS 6560/6561 VIC-I sound). VIC-TRACKER (.vt) tunes,
+    // played by victrackerplugin. Placed after the PRODUCT anchor for the same
+    // reason as the Apple/Virtual Boy/Atari blocks above -- the console region is
+    // full up to the fixed TRACKER=0x30 anchor -- and nothing caps at PRODUCT.
+    VIC20,
+
+    // SNK Neo Geo Pocket / Color (T6W28 sound, a SN76489 sibling). Promoted from
+    // an "Other Platforms" sub-platform (OTHER byte) to its own top-level TAB
+    // filter row. Placed after the PRODUCT anchor for the same reason as above.
+    NEOGEOPOCKET
 
 };
 
@@ -234,6 +275,12 @@ public:
     // Used by the scroller fallback when a tune carries no embedded text.
     std::string describeExtension(std::string const& ext);
 
+    // Just the short NAME field (line 1 of a formats_descriptions.txt entry, no
+    // prose), e.g. "FastTracker 2.0" for "xm". Shares describeExtension()'s lazy
+    // load. Returns "" when the extension isn't listed. Used to label rows on the
+    // CTRL+TAB Formats screen.
+    std::string extensionName(std::string const& ext);
+
     // Map a modland/format string (+ path) to its format byte (platform/type).
     static uint8_t classifyFormat(std::string const& fmt,
                                   std::string const& path);
@@ -259,6 +306,30 @@ public:
     // non-hardware bytes (MP3, OGG, Radio, YouTube, Podcast, Playlist, unknown).
     // Lets the TAB filter map a highlighted platform/category to its logo.
     static std::string platformScreenshotSlug(uint8_t formatByte);
+
+    // Canonical sub-platform group name for a raw DB format string -- the row a
+    // song lands on in the Other/Arcade drill, and the base name of its logo.
+    // Shared by buildSubPlatforms() and the logo lookup so the two can never
+    // disagree about what a group is called. See the definition for the rules.
+    static std::string subPlatformName(std::string const& fmt);
+
+    // The "Other Platforms" drill rows that name real hardware, and so should
+    // carry a <name>.png logo. Read straight from the song DB so it works at
+    // startup before the search index exists. Used to report missing logos.
+    // Returns empty when the DB doesn't exist yet.
+    static std::vector<std::string> subPlatformNames();
+
+    // The complementary set: Other drill rows that name no machine (non-hardware
+    // pouet tags like Java/JavaScript/Flash and meta buckets like VGM/Browser).
+    // A logo could never be "correct" for these, so they are NOT flagged as gaps
+    // by subPlatformNames() -- this lists them separately so the startup report
+    // can still show which rows are art-less, distinct from a real missing logo.
+    static std::vector<std::string> subPlatformNamesNonHardware();
+
+    // Distinct byte-less "family" parent rows in the Other drill (e.g. "Virtual
+    // Platforms", which nests TIC-80/PICO-8/MicroW8). Each wants a <name>.png of
+    // its own, so the startup missing-logo report checks them like a real row.
+    static std::vector<std::string> subPlatformFamilyNames();
 
     // Distinct file extension (lowercased) -> the set of platform slugs its
     // songs classify to, read from the song DB. Used at startup to report which
@@ -360,6 +431,15 @@ public:
         return reindexingNow.load(std::memory_order_relaxed);
     }
 
+    // Collection id ("hvsc", "mirsoft", ...) the indexer is currently working
+    // on, published for the startup progress screen. Same tag the search results
+    // show next to the format line. Empty when nothing is in flight.
+    std::string getIndexingName() const
+    {
+        std::lock_guard lock{ indexNameMutex };
+        return indexName;
+    }
+
     SongInfo& lookup(SongInfo& song);
 
     std::vector<SongInfo> getProductSongs(uint32_t id);
@@ -402,10 +482,93 @@ public:
 
     void addToPlaylist(std::string const& plist, SongInfo const& song);
     void removeFromPlaylist(std::string const& plist, SongInfo const& toRemove);
+    // Drop every song from `plist` and persist the (now empty) list to disk.
+    void clearPlaylist(std::string const& plist);
     std::vector<SongInfo>& getPlaylist(std::string const& plist);
+
+    // Create a new on-disk playlist named `name` seeded with `songs`, and add it
+    // to the in-memory list so it shows up immediately. The caller is expected to
+    // have validated `name` (non-empty, no collision) via playlistNames() first.
+    void createPlaylist(std::string const& name,
+                        std::vector<SongInfo> const& songs);
+    // Delete the playlist named `name`: remove its file and drop it from the
+    // in-memory list. No-op if it does not exist.
+    void deletePlaylist(std::string const& name);
+    // Names of all known playlists, for collision checks before createPlaylist().
+    std::vector<std::string> playlistNames() const;
 
     void setFilter(std::string const& filter, int type = 0);
     void setFormatFilter(std::vector<uint8_t> const& allowedFormats);
+
+    // --- "Formats" screen (per-extension filter) -----------------------------
+    // One browsable row per resolved file extension, sorted by song count. A row
+    // is admitted if the extension is described in formats_descriptions.txt, or
+    // has >= kExtGroupMinSongs songs and a clean token (so song-name fragments
+    // that resolveExtension() mistakes for extensions never become rows).
+    struct ExtGroup
+    {
+        std::string ext;    // resolved extension, lowercased, no dot (e.g. "mod")
+        std::string name;   // description name, else modal DB format string, else ""
+        int count;          // songs in this group
+        uint8_t platform;   // format byte of the modal DB format (for row colour)
+    };
+    // The extension list (built lazily on first call, then cached), highest count
+    // first. The vector index equals the group id used by setExtensionFilter().
+    std::vector<ExtGroup> const& extensionGroups();
+    // Restrict search to one extension group (its index in extensionGroups());
+    // pass -1 to clear. Reuses the same title-index predicate slot and the
+    // formatFilterActive machinery the platform (TAB) filter uses -- so only one
+    // of the two can be active at a time, and every downstream search/prompt/ESC
+    // path works unchanged.
+    void setExtensionFilter(int gid);
+    int extensionFilter() const { return extensionFilterGid; }
+
+    // --- "Databases" screen (per-collection filter) --------------------------
+    // One browsable row per source collection (HVSC, Modland, ...), sorted by
+    // song count. Same stack as the extension filter -- setDatabaseFilter reuses
+    // the formatFilterActive machinery, so browse/prompt/ESC all work unchanged.
+    struct DatabaseGroup
+    {
+        int rowid;         // collection.ROWID (packed in formats[i] >> 8)
+        std::string id;    // short id ("hvsc")
+        std::string name;  // display name ("HVSC"); falls back to id when empty
+        int count;         // songs in this collection
+        uint8_t platform;  // modal format byte of its songs (for row colour)
+    };
+    // The database list (built lazily, then cached), highest count first. The
+    // vector index is the row's position; setDatabaseFilter takes the ROWID.
+    std::vector<DatabaseGroup> const& databaseGroups();
+    // Restrict search to one collection ROWID; pass -1 to clear. Mutually
+    // exclusive with the platform and extension filters (shares the slot).
+    void setDatabaseFilter(int rowid);
+    int databaseFilter() const { return databaseFilterRowid; }
+
+    // --- "Plugins" screen (per-plugin filter) ---------------------------------
+    // One browsable row per registered ChipPlugin that claims at least one song,
+    // sorted by song count. A song's plugin is resolved by EXTENSION only (its
+    // resolveExtension()'d extension looked up against each plugin's
+    // getSupportedExtensions(), first -- i.e. highest-priority -- claimer wins,
+    // same order MusicPlayer::fromFile() tries plugins in) -- not canHandle(),
+    // since some plugins disambiguate by magic bytes and would need to open
+    // every (mostly remote/uncached) catalog file to answer.
+    struct PluginGroup
+    {
+        std::string name;  // plugin name()
+        int index;         // index of the plugin in getPlugins()
+        int count;         // songs whose extension this plugin claims
+        uint8_t platform;  // modal format byte of its songs (for row colour)
+    };
+    std::vector<PluginGroup> const& pluginGroups();
+    void setPluginFilter(int gid);
+    int pluginFilter() const { return pluginFilterGid; }
+
+    // Precompute the Format and Database browse lists so the first TAB to those
+    // screens is instant. Call once, after indexing has finished. The Database
+    // list is cheap (in-memory) and built inline; the Extension list needs a
+    // full song-table scan (~360ms), so it runs on a worker thread with its own
+    // DB connection -- keeping the render loop (star scroll) smooth. Safe to call
+    // more than once; later calls are no-ops once built.
+    void precomputeBrowseListsAsync();
 
 private:
     void initDatabase(utils::path const& workDir, Variables& vars);
@@ -532,11 +695,43 @@ public:
     {
         return otherPlatformList;
     }
+    // Extensions we ship a plugin for but deliberately cannot play
+    // (data/misc/not_supported_extensions.txt). Exposed because the archive
+    // track picker (MusicPlayerList) derives its member allowlist from the
+    // registered plugins and must subtract these, exactly as the indexer does.
+    std::set<std::string> const& unsupportedExtensions() const
+    {
+        return unsupportedExts;
+    }
+    // The live instance (set in the ctor). Null before construction.
+    static MusicDatabase* instance() { return self; }
+
+    // Song count for one sub-platform group id (0 if unknown). Same lookup
+    // getTitle() uses for its "[N tunes]" suffix.
+    int otherPlatformSongCount(int gid) const
+    {
+        for (size_t i = 0; i < otherPlatformList.size(); i++)
+            if (otherPlatformList[i].first == gid)
+                return otherGroupCount[i];
+        return 0;
+    }
+    // True if a groupId is a family PARENT row (a byte-less 2nd-level grouping
+    // like "Virtual Platforms") rather than a real sub-platform. Its song count
+    // is the sum of its children's, so callers tallying totals must skip it.
+    bool isOtherFamilyRow(int gid) const { return otherFamilyGids.count(gid) > 0; }
     // Drill into one sub-platform (its groupId) so an empty query lists that
     // platform's songs; pass -1 to go back to the platform list.
     void setOtherPlatform(int gid) { otherPlatformFilter = gid; }
     int otherPlatform() const { return otherPlatformFilter; }
     bool otherFilterActive_() const { return otherFilterActive; }
+    // A second drill level WITHIN the Other list: a handful of sub-platforms are
+    // grouped under a byte-less "family" parent row (e.g. TIC-80/PICO-8/MicroW8
+    // under "Virtual Platforms"). Entering a family (its parent gid) makes the
+    // empty-query menu list that family's children instead of the top rows; -1
+    // returns to the top. Orthogonal to setOtherPlatform, which drills a single
+    // group down to its songs (ESC pops songs -> family -> top, one step each).
+    void setOtherParent(int familyGid) { otherParentFilter = familyGid; }
+    int otherParent() const { return otherParentFilter; }
 
 private:
     RemoteLoader& remoteLoader;
@@ -552,6 +747,8 @@ private:
     // ext -> "<trackers> - <description>", lazily loaded from
     // data/misc/formats_descriptions.txt by describeExtension().
     std::map<std::string, std::string> formatDescriptions;
+    // ext -> just the line-1 name field (no prose), loaded alongside the above.
+    std::map<std::string, std::string> formatNames;
     bool formatDescriptionsLoaded = false;
 
     // The (singleton) instance, so the static resolveExtension()/describeFormat()
@@ -612,14 +809,79 @@ private:
     bool otherFilterActive = false;                     // OTHER/ARCADE filter on
     uint8_t subPlatformByte = OTHER;                    // active drill byte
     int otherPlatformFilter = -1;                       // drilled-in groupId
+    int otherParentFilter = -1;                         // drilled-in family gid (-1=top)
     int builtSubPlatformByte = -1;                      // byte the set was built for
     std::vector<std::pair<int, std::string>> otherPlatformList; // (groupId,name)
     std::vector<int> otherGroupCount;                   // songs per group (by pos)
     std::unordered_map<int, int> otherIndexToGroup;     // song index -> groupId
+    // Family (2nd-level) grouping over otherPlatformList. A family parent is a
+    // synthetic group appended after the real ones: it holds no songs of its own,
+    // its otherGroupCount is the sum of its children's, and getSongInfo gives it
+    // an "othergroup::" path so a click enters its submenu instead of playing.
+    std::set<int> otherFamilyGids;                      // gids that are family parents
+    std::vector<int> otherTopRows;                      // top-menu synthetic indices (sorted)
+    std::map<int, std::vector<int>> otherFamilyChildRows; // parent gid -> child synthetic indices
     // Scan the song table (ROWID == search index + 1) once, classify songs whose
     // format byte == subPlatformByte by their format string, and populate the
     // browse state above. Rebuilds when subPlatformByte changes.
     void buildSubPlatforms();
+
+    // Extension-filter browse state (see extensionGroups() / setExtensionFilter).
+    static constexpr int kExtGroupMinSongs = 10; // admit undescribed exts at/above
+    std::vector<ExtGroup> extensionGroupList;    // by count desc; index == gid
+    std::vector<int16_t> extGroupOf;             // song index -> gid, or -1
+    // Atomic so extensionGroups()'s fast path can read it while the worker
+    // (precomputeBrowseListsAsync) sets it. The build critical section itself is
+    // serialized by extGroupsMutex so the worker and a racing lazy GUI call can
+    // never build (or publish) at the same time.
+    std::atomic<bool> extensionGroupsBuilt{ false };
+    std::mutex extGroupsMutex;                    // guards buildExtensionGroups()
+    std::future<void> extGroupsFuture;            // worker handle (joins on destroy)
+    int extensionFilterGid = -1;                 // active gid, -1 = none
+    // One scan of the song table (on its OWN db connection, so it is worker-safe):
+    // resolveExtension() per song, group, count, sort by count, admit per the rule
+    // above. Fills extensionGroupList / extGroupOf, then publishes under the mutex.
+    void buildExtensionGroups();
+
+    // Database-filter browse state (see databaseGroups() / setDatabaseFilter).
+    std::vector<DatabaseGroup> databaseGroupList; // by count desc; index == row
+    bool databaseGroupsBuilt = false;
+    int databaseFilterRowid = -1;                 // active collection ROWID, -1 = none
+    // ROWID of the "Playlists" collection (db.lua id "pl"), resolved lazily and
+    // cached. -2 = not looked up yet, -1 = no such collection. When this is the
+    // active database filter, search() also lists the user's config-dir playlists
+    // (playLists) so runtime-created lists show alongside the indexed ones.
+    int playlistsCollRowid = -2;
+    int playlistsCollectionRowid();
+    // Count songs per collection (from formats[] >> 8), fetch id/name and the
+    // modal platform byte, sort by count. Fills databaseGroupList.
+    void buildDatabaseGroups();
+
+    // Plugin-filter browse state
+    std::vector<PluginGroup> pluginGroupList;
+    std::vector<int16_t> pluginGroupOf;             // song index -> gid, or -1
+    std::atomic<bool> pluginGroupsBuilt{ false };
+    std::mutex pluginGroupsMutex;
+    std::future<void> pluginGroupsFuture;
+    int pluginFilterGid = -1;
+    void buildPluginGroups();
+
+    // Order a candidate-index list alphabetically by title. Uses the precomputed
+    // titleRank (an int compare per element, no strings) when it's ready, so even
+    // a 250k-song filter sorts in a few ms; falls back to decorate-sort-undecorate
+    // only if a filter is somehow activated before the rank is built. Called once
+    // when a filter is activated so the per-keystroke search paths never re-sort.
+    void sortCandidatesByTitle(std::vector<int>& cands);
+
+    // Alphabetical rank (0..N-1) of each titleIndex entry, by lowercased title.
+    // Built once at startup on the indexing thread (buildTitleRank) so every
+    // subsequent filter activation is a plain integer sort. In-memory only (not
+    // persisted -- no index-format change); rebuilt each launch and after a
+    // reindex. Empty / shorter than titleIndex until built or after a live append.
+    std::vector<uint32_t> titleRank;
+    // Populate titleRank from the (loaded or freshly built) titleIndex. Runs on
+    // the background indexing thread, before the indexing flag clears.
+    void buildTitleRank();
     // Rank (0..N-1) of each distinct sub-format hue present in the active
     // filter, and the count N. Built in setFormatFilter() so renderSong can
     // spread hues evenly across however many formats the platform actually has.
@@ -660,6 +922,15 @@ private:
     // "Indexing database" toast/bar entirely instead of briefly flashing it on
     // slow machines where the cached-load window outlasts the toast delay.
     std::atomic<bool> reindexingNow{ false };
+    // Collection id currently being created/indexed (see getIndexingName).
+    // Written from the async index thread, read from the render thread.
+    mutable std::mutex indexNameMutex;
+    std::string indexName;
+    void setIndexingName(std::string const& n)
+    {
+        std::lock_guard lock{ indexNameMutex };
+        indexName = n;
+    }
 
     std::vector<Playlist> playLists;
     std::unordered_map<uint64_t, uint32_t> pathMap;
