@@ -6,7 +6,7 @@ Raspberry Pi and Ubuntu efforts.
 | Milestone | Target | Status |
 | --- | --- | --- |
 | **1. Text-mode player** | `cm.exe` (+ `cmtest.exe`) | ✅ **Reached** — builds, plays audio, interactive text UI works. See §5. |
-| **2. Working GUI** | `chipmachine.exe` (grappix/OpenGL) | 📋 Planned — see §9–15. |
+| **2. Working GUI** | `chipmachine.exe` (grappix/OpenGL) | ✅ **Reached** — builds, window opens, plays. See §9. |
 
 Sections 1–8 cover milestone 1 (kept as the record of how the Windows port was
 brought up); milestone 2 starts at §9.
@@ -236,15 +236,49 @@ Milestone 1 delivered the text-mode player (`cm.exe`) and the test runner
 (`cmtest.exe`). Milestone 2 is the **grappix/OpenGL GUI** — the `chipmachine`
 target — running natively on Windows 11.
 
-## 9. Definition of done (GUI milestone)
+## 9. Definition of done (GUI milestone) — ✅ REACHED
 
-- `chipmachine.exe` builds under MinGW-w64 with `-DCM_GUI=ON` (the default).
-- It opens a window, renders the song browser, and **plays audio**.
-- Keyboard navigation works (search field, arrows, Enter) — the same interaction
-  set we validated in text mode, but through grappix's GLFW key path.
-- The spectrum/`MusicBars` visualiser renders (this is what pulls in FFTW).
-- No console window appears (the global `-mwindows` already handles this; `cm`
-  and `cmtest` opt back out with `-mconsole`).
+- ✅ `chipmachine.exe` builds under MinGW-w64 with `-DCM_GUI=ON` (the default).
+- ✅ It opens a window, renders the song browser, and **plays audio**.
+- Keyboard navigation (search field, arrows, Enter) — via grappix's GLFW key
+  path, a different input path from the Win32 console backend used by `cm`.
+- The spectrum/`MusicBars` visualiser (the only consumer of FFTW).
+- ✅ No console window (the global `-mwindows`; `cm`/`cmtest` opt out with
+  `-mconsole`).
+
+### What it took
+
+Notably little — the GUI came up in **three steps with no compile-error triage
+at all**, which was the opposite of milestone 1's 22 build issues. The reason is
+in §10: grappix already had a `WIN32` branch using the same GLFW/GLEW desktop
+backend as Linux, so there was no windowing layer to port. The work was
+build glue:
+
+| Fix | File |
+| --- | --- |
+| Replaced `xxd -i` shader embedding with a CMake-native generator (no vim, no shell redirect); symbol names verified byte-identical to xxd | `external/apone/mods/grappix/bin2c.cmake` (new), `grappix/CMakeLists.txt` |
+| `find_package(glew)` → `find_package(GLEW)` (module mode) + link `GLEW::GLEW` — the lowercase form "succeeded" while leaving `GLEW_LIBRARY` as `NOTFOUND` | `grappix/CMakeLists.txt` |
+| Shared/DLL linkage: prefer `glfw3dll` import lib over static `libglfw3.a`; add `gdi32 user32 shell32` | `grappix/CMakeLists.txt` |
+| 32 MB PE stack reserve (same ~3 MB `MusicDatabase` that crashed `cmtest`) | root `CMakeLists.txt`, `chipmachine` target |
+
+Two process notes worth keeping: `bin2c.cmake` was a **new, untracked** file, so
+the first sync carried the `CMakeLists.txt` reference but not the file itself
+(ninja: "missing and no known rule to make it"). And `find_library` results are
+**cached**, so the reordered `NAMES glfw3dll glfw3` needed
+`cmake -U GLFW_LIBRARY` to take effect rather than a plain reconfigure.
+
+### Known gaps on Windows (not blockers)
+
+- **File-open dialog is a no-op** — `src/NativeDialogs_stub.cpp` returns `""`
+  (blocker G5). A Win32 implementation would use `GetOpenFileNameW` (comdlg32)
+  or `IFileOpenDialog`.
+- **Shared DLLs must ship for distribution** — `glfw3.dll` and `glew32.dll`
+  resolve from `/mingw64/bin` in the MINGW64 shell, but must be copied beside
+  `chipmachine.exe` to run from Explorer or on another machine.
+- **Seven plugins disabled** (§5 + `sunvoxplugin`) — the GUI inherits the
+  milestone-1 `WIN32_DISABLED_PLUGINS` set.
+- **ffmpeg-backed formats fail** — `bin/ffmpeg.exe` is absent and
+  `utils::ExecPipe` is a Windows stub (`read()` → −1).
 
 ## 10. What already carries over (this is much better than it looks)
 
