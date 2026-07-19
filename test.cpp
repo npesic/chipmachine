@@ -326,7 +326,10 @@ TEST_CASE("VGMRips format labels classify to a platform", "[music]")
         { "NEC PC-88", JPFM },            { "Sharp X68000", JPFM },
         { "FM Towns", JPFM },             { "IBM PC", PC },
         { "Atari ST", ATARI },            { "ZX Spectrum", SPECTRUM },
-        { "Commodore 64", SID },          { "Apple IIgs", APPLE },
+        // chipmachine:: qualified: windows.h (via coreutils/file.h) defines a
+        // global `SID` type (the Win32 security identifier), which would
+        // otherwise be ambiguous with the Formats enumerator here.
+        { "Commodore 64", chipmachine::SID }, { "Apple IIgs", APPLE },
         { "Arcade", ARCADE },             { "Arcade (Capcom)", ARCADE },
         { "Arcade (Konami)", ARCADE },    { "Pinball", OTHER },
         { "Atari Jaguar", ATARI },
@@ -446,7 +449,8 @@ TEST_CASE("mirsoft platform labels classify to a platform", "[music]")
     MusicDatabase mdb{ rl };
     const std::string url = "mirsoft::A%20Game.zip";
     struct { const char* fmt; uint8_t plat; } cases[] = {
-        { "Amiga", AMIGA },              { "Commodore 64", SID },
+        // chipmachine:: qualified -- see note above re windows.h's global SID.
+        { "Amiga", AMIGA },              { "Commodore 64", chipmachine::SID },
         { "PC", PC },                    { "NES", NES },
         { "Super Nintendo", SNES },      { "Macintosh", APPLEMAC },
         { "PlayStation", PLAYSTATION },  { "Game Boy", GAMEBOY },
@@ -487,7 +491,8 @@ TEST_CASE("search keeps same-name different-format songs", "[database]")
         auto s = mdb->getSongInfo(result[i]);
         if (s.title != "Delta" || s.composer != "Rob Hubbard") continue;
         uint8_t b = MusicDatabase::classifyFormat(s.format, s.path);
-        if (b == SID && sidPos < 0) sidPos = (int)i;     // real HVSC .sid
+        // chipmachine:: qualified -- see note above re windows.h's global SID.
+        if (b == chipmachine::SID && sidPos < 0) sidPos = (int)i; // real HVSC .sid
         if (b == AMIGA && amigaPos < 0) amigaPos = (int)i; // mirsoft .mod remix
     }
     REQUIRE(sidPos >= 0);    // the SID survived dedup
