@@ -399,7 +399,11 @@ TEST_CASE("YouTube captures classify by their pouet platform tag", "[music]")
     const std::string yt = "https://www.youtube.com/watch?v=abc";
     struct { const char* fmt; uint8_t plat; } cases[] = {
         { "Youtube (Amiga AGA)", AMIGA },
-        { "Youtube (Commodore 64)", SID },
+        // chipmachine:: qualified -- windows.h (reached via coreutils/file.h)
+        // defines a global `SID` type (the Win32 security identifier), which is
+        // otherwise ambiguous with the Formats enumerator under the
+        // `using namespace chipmachine` above.
+        { "Youtube (Commodore 64)", chipmachine::SID },
         { "Youtube (Windows)", PC },
         { "Youtube (Virtual Boy)", VIRTUALBOY },
         // Name no hardware -> Other Platforms, where the drill surfaces them
