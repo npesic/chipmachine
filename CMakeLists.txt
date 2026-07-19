@@ -420,6 +420,13 @@ if(WIN32)
     # gives the process NO console) that the grappix GUI target wants. A later
     # -mconsole on the link line wins, so cm gets a normal console.
     target_link_options(cm PRIVATE -mconsole)
+    # Windows' default 1 MB stack is small for this code base (a MusicDatabase is
+    # ~3 MB of SearchIndex; Furnace puts a ~744 KB DivSong on the stack). On
+    # Windows the PE stack reserve is also the default for threads created
+    # without an explicit size -- including the MusicPlayerList song-loading
+    # worker. Reserve 32 MB (address space only, committed on use) to match the
+    # headroom Linux/macOS give. See the matching note on cmtest.
+    target_link_options(cm PRIVATE -Wl,--stack,33554432)
 endif()
 
 add_executable(mksonglist scripts/mksonglist/mksonglist.cpp src/SongFileIdentifier.cpp)
@@ -449,6 +456,14 @@ if(WIN32)
     # this the Catch2 runner's stdout/stderr go nowhere and the test results are
     # invisible. A later -mconsole on the link line wins.
     target_link_options(cmtest PRIVATE -mconsole)
+    # Windows defaults to a 1 MB stack; Linux/macOS give 8 MB. A MusicDatabase
+    # holds two SearchIndex members, each with `std::vector<int> stringMap[65536]`
+    # (~1.5 MB), so a single `MusicDatabase mdb{rl};` stack local is ~3 MB and
+    # overflows instantly -- several tests construct one that way and died before
+    # their first assertion. Raise the PE stack reserve to 32 MB. This is reserve
+    # (address space), not commit, so it costs nothing until touched, and it
+    # applies to every thread created without an explicit stack size too.
+    target_link_options(cmtest PRIVATE -Wl,--stack,33554432)
 endif()
 
 # The SunVox engine is a prebuilt shared library that the plugin dlopen()s at
