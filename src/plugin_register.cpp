@@ -30,7 +30,9 @@ extern "C" {
     void pxtoneplugin_register();
     void ptkplugin_register();
     void orgplugin_register();     // Organya / Cave Story (.org)
+#ifndef NO_SUNVOXPLUGIN
     void sunvoxplugin_register();  // SunVox modular synth (.sunvox)
+#endif
 #ifndef NO_EUPPLUGIN
     void eupplugin_register();     // Euphony / FM Towns & PC-98 (.eup)
 #endif
@@ -102,7 +104,9 @@ void register_plugins() {
     pxtoneplugin_register();
     ptkplugin_register();
     orgplugin_register();
+#ifndef NO_SUNVOXPLUGIN
     sunvoxplugin_register();
+#endif
 #ifndef NO_EUPPLUGIN
     eupplugin_register();
 #endif

@@ -204,12 +204,19 @@ set(MUSICPLAYER_PLUGINS
 #   * dmfplugin       -- Furnace (DefleMask .dmf): the ~300-object combined image
 #                        overflows COFF REL32 relocations ("relocation truncated to
 #                        fit") and misses Furnace's Windows getWinConfigPath().
+#   * sunvoxplugin    -- the SunVox engine is a prebuilt shared library dlopen()ed
+#                        at runtime, and only the macOS build (sunvox.dylib) is
+#                        vendored here; there is no sunvox.dll, so LoadLibrary
+#                        fails with error 126. Drop the official Windows binary
+#                        into sunvoxplugin/sunvox_lib/sunvox.dll and remove this
+#                        entry to enable it.
 # The two most worth re-enabling later are dmfplugin (popular format; needs
 # -Wa,-mbig-obj on the Furnace slice + the Windows config-path source) and
 # mikmodplugin (needs a static-link MIKMODAPI macro + a random() shim).
 if(WIN32)
     set(WIN32_DISABLED_PLUGINS
-        ixsplugin eupplugin wsrplugin playerproplugin mikmodplugin dmfplugin)
+        ixsplugin eupplugin wsrplugin playerproplugin mikmodplugin dmfplugin
+        sunvoxplugin)
     foreach(_p ${WIN32_DISABLED_PLUGINS})
         list(REMOVE_ITEM MUSICPLAYER_PLUGINS ${_p})
         string(TOUPPER ${_p} _p_uc)

@@ -1401,7 +1401,9 @@ TEST_CASE("PxTune", "[music]") { testPlugin<musix::PxTonePlugin>("testmus/pttune
 TEST_CASE("PTK", "[music]") { testPlugin<musix::PTKPlugin>("testmus/ptk", ""); }
 TEST_CASE("NTK", "[music]") { testPlugin<musix::PTKPlugin>("testmus/ntk", ""); }
 TEST_CASE("Org", "[music]") { testPlugin<musix::OrgPlugin>("testmus/org", ""); }
+#ifndef NO_SUNVOXPLUGIN
 TEST_CASE("SunVox", "[music]") { testPlugin<musix::SunVoxPlugin>("testmus/sunvox", ""); }
+#endif // NO_SUNVOXPLUGIN
 // Exclude the ".W" wavebank from the scan -- it's the song's companion, not a
 // playable fixture (canHandle rightly declines it); fromFile() picks it up next
 // to the bare song.
@@ -1744,6 +1746,7 @@ TEST_CASE("SBStudio plays sound", "[music]")
 // dlopen()ed shared library (MIT licensed, copied next to the test binary by
 // CMake). This exercises the real DB content -- the .sunvox files here are the
 // exact modland songs referenced by the chipmachine database.
+#ifndef NO_SUNVOXPLUGIN
 TEST_CASE("SunVox plays sound", "[music]")
 {
     logging::setLevel(logging::Level::Warning);
@@ -1768,6 +1771,7 @@ TEST_CASE("SunVox plays sound", "[music]")
 
     REQUIRE(energy != 0);
 }
+#endif // NO_SUNVOXPLUGIN
 
 // Organya (.org, Cave Story / OrgMaker). The .org file carries only the
 // sequence; the WAVE100 wavetable + drum PCM are a universal constant embedded

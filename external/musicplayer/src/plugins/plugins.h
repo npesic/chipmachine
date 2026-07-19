@@ -27,7 +27,9 @@
 #include "pxtoneplugin/PxTonePlugin.h"
 #include "ptkplugin/PTKPlugin.h"
 #include "orgplugin/OrgPlugin.h"
+#ifndef NO_SUNVOXPLUGIN
 #include "sunvoxplugin/SunVoxPlugin.h"
+#endif
 #ifndef NO_EUPPLUGIN
 #include "eupplugin/EUPPlugin.h"
 #endif
