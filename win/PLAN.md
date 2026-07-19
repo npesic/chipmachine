@@ -1,8 +1,15 @@
 # Plan: Build ChipMachine for Windows 11
 
-Goal: from the same code base, reach the first milestone — a **working
-text-mode `cm` player on Windows 11** — mirroring the Raspberry Pi and Ubuntu
-efforts.
+Goal: from the same code base, bring ChipMachine to Windows 11, mirroring the
+Raspberry Pi and Ubuntu efforts.
+
+| Milestone | Target | Status |
+| --- | --- | --- |
+| **1. Text-mode player** | `cm.exe` (+ `cmtest.exe`) | ✅ **Reached** — builds, plays audio, interactive text UI works. See §5. |
+| **2. Working GUI** | `chipmachine.exe` (grappix/OpenGL) | 📋 Planned — see §9–15. |
+
+Sections 1–8 cover milestone 1 (kept as the record of how the Windows port was
+brought up); milestone 2 starts at §9.
 
 ## TL;DR
 
@@ -28,7 +35,7 @@ efforts.
 
 | Choice | Decision |
 | --- | --- |
-| Milestone | **Text-mode `cm`** first (no grappix/GL GUI), exactly as RPi/Ubuntu. |
+| Milestone | **Text-mode `cm`** first (no grappix/GL GUI), exactly as RPi/Ubuntu. The GUI follows as milestone 2 (§9). |
 | Toolchain | **MinGW-w64 (GCC ≥ 12)**. MSVC ruled out (see TL;DR). |
 | Host | **Native on Windows via MSYS2** (primary); MinGW **cross from Linux** as an alternative (§6). |
 | Arch | x86-64 (`mingw-w64-x86_64`). |
@@ -220,3 +227,165 @@ wall will be the `cm`-target/text-mode guards (Phase 1); from there it becomes
 the same read-the-error, fix-or-disable loop that took RPi and Ubuntu to a
 working player. Net: **less novel than it looks** — one real new component (the
 console backend) on top of the GCC/GNU base we've already made portable.
+
+---
+
+# Milestone 2: Working GUI (`chipmachine` target)
+
+Milestone 1 delivered the text-mode player (`cm.exe`) and the test runner
+(`cmtest.exe`). Milestone 2 is the **grappix/OpenGL GUI** — the `chipmachine`
+target — running natively on Windows 11.
+
+## 9. Definition of done (GUI milestone)
+
+- `chipmachine.exe` builds under MinGW-w64 with `-DCM_GUI=ON` (the default).
+- It opens a window, renders the song browser, and **plays audio**.
+- Keyboard navigation works (search field, arrows, Enter) — the same interaction
+  set we validated in text mode, but through grappix's GLFW key path.
+- The spectrum/`MusicBars` visualiser renders (this is what pulls in FFTW).
+- No console window appears (the global `-mwindows` already handles this; `cm`
+  and `cmtest` opt back out with `-mconsole`).
+
+## 10. What already carries over (this is much better than it looks)
+
+The single most important fact: **grappix already has a `WIN32` branch**, and it
+uses the *same* generic desktop window backend as Linux.
+
+| Piece | Status | Detail |
+| --- | --- | --- |
+| Window/input backend | ✅ Exists | `grappix/CMakeLists.txt` `elseif(WIN32)` (~lines 57–75) selects `grappix/specific/window_pc.cpp` — the same file Linux and Emscripten use. |
+| `window_pc.cpp` portability | ✅ Clean | Pure **GLFW + GLEW**; no X11 anywhere (the X11 libs are added only in the `UNIX` branch). GLFW abstracts Win32 natively. `glewInit()` at `window_pc.cpp:223`. |
+| Image loading | ✅ No new deps | The `image` module uses **bundled lodepng** (`external/apone/mods/image/CMakeLists.txt`); the `find_package(PNG)` lines are commented out. |
+| Subsystem flag | ✅ Already right | The root `WIN32` block sets `-mwindows` globally, which is exactly what a GUI exe wants. |
+| Plugin set | ✅ Done | `chipmachine` links the same `${MUSICPLAYER_PLUGINS}` list that milestone 1 already filtered via `WIN32_DISABLED_PLUGINS`. |
+| Audio | ✅ Done | Same `audioplayer` path already proven by `cm.exe`. |
+| Stack reserve | ✅ Consider | `cm`/`cmtest` got `-Wl,--stack,33554432`; `chipmachine` should get it too (it constructs the same `MusicDatabase`). |
+
+So this is **not** a port of a windowing layer — it is a dependency + build-glue
+exercise, plus first-time compilation of grappix on Windows.
+
+## 11. Dependencies to install (MSYS2, MINGW64 shell)
+
+```bash
+pacman -S --needed \
+  mingw-w64-x86_64-glfw \
+  mingw-w64-x86_64-glew \
+  mingw-w64-x86_64-freetype \
+  mingw-w64-x86_64-fftw \
+  vim            # provides xxd -- see blocker G1
+```
+
+Notes:
+- **FFTW**: the `fft` module looks for `libfftw3f` — the **single-precision**
+  variant (`find_library(FFT_LIBRARY NAMES libfftw3f.a fftw3f)`). The MSYS2
+  `fftw` package ships all precisions.
+- **OpenGL** itself needs no package — `find_package(OpenGL)` resolves to
+  `opengl32` from the MinGW SDK.
+
+## 12. Known concrete blockers (with file references)
+
+These are identified from reading the build files, ordered by how likely they
+are to bite. None is deep — but each will stop the build cold.
+
+**G1. `xxd` shader embedding — `grappix/CMakeLists.txt:120`**
+Shaders are embedded by shelling out to `xxd -i`:
+```cmake
+COMMAND xxd -i .shader/${SHADERNAME} > ${SHADERNAME}.c
+```
+`xxd` ships with **vim**, which is not installed in MSYS2 by default. Two fixes:
+- *Quick*: `pacman -S vim`.
+- *Better*: replace with a CMake-native generator (a small `-P` script using
+  `file(READ ... HEX)`), removing an external tool from the build entirely. This
+  also fixes the shell redirect `>`, which is not portable to non-shell
+  generators. **Recommended** — it's the same class of fix as the `ld -r`
+  response files.
+
+**G2. `find_package(glew REQUIRED)` — `grappix/CMakeLists.txt:62`**
+Lowercase `glew` searches for `glewConfig.cmake`/`glew-config.cmake` (config
+mode). The WIN32 branch then uses `${GLEW_LIBRARIES}`/`${GLEW_INCLUDE_DIRS}`,
+which are set by CMake's **`FindGLEW` module** (uppercase). So even when the
+package is found, those variables may be empty. Expected fix: `find_package(GLEW
+REQUIRED)` and/or link the imported target `GLEW::GLEW`.
+
+**G3. Static GLFW/GLEW need Win32 system libs — `grappix/CMakeLists.txt:63`**
+```cmake
+find_library(GLFW_LIBRARY NAMES libglfw3.a glfw3 glfw3dll REQUIRED)
+```
+`libglfw3.a` is listed **first**, so the static library wins. Static GLFW on
+Windows requires `gdi32` (and `user32`/`shell32`); static GLEW requires
+`-DGLEW_STATIC` and `opengl32`. The `UNIX` branch adds its X11 equivalents but
+the `WIN32` branch adds **no** system libs — expect undefined references to
+`__imp_CreateWindowExW`, `__imp_wglCreateContext`, etc. Fix: append
+`gdi32 opengl32 user32 shell32` to `EXTRA_LIBS` on WIN32, and define
+`GLEW_STATIC` if the static GLEW is selected.
+
+**G4. First-ever compile of grappix on Windows**
+`cm` never built grappix, so none of it has been through MinGW/GCC 16. Expect a
+triage round in:
+- `grappix/freetype-gl/*.c` — vendored C, the usual GCC-16 strictness (already
+  softened globally by `-std=gnu17` + the `-Wno-*` batch from milestone 1).
+- `grappix/*.cpp`, `grappix/gui/*.cpp` — the `-include cstdint` global should
+  cover the modular-libstdc++ fallout.
+- `freetype-gl/opengl.h` includes `<GL/wglew.h>` on Windows — comes from the
+  GLEW package; will fail loudly if G2 left includes unset.
+
+**G5. `NativeDialogs_stub.cpp` — file dialog is a no-op**
+`GUI_PLATFORM_GLUE_FILES` resolves to `src/NativeDialogs_stub.cpp` on non-Apple,
+whose `open_file_dialog()` returns `""` (caller treats that as "cancelled"). The
+GUI will build and run; only the "open file" command silently does nothing.
+Not a blocker for the milestone — a natural follow-up is a Win32
+implementation using `GetOpenFileNameW` (comdlg32) or `IFileOpenDialog`.
+
+**G6. Data/asset path resolution**
+The GUI loads fonts, textures, and Lua config from `data/`. `cm.exe` already
+proved `Environment::getExeDir()`/`getAppDir()` work on Windows, but the GUI
+touches more assets. Watch for anything assuming forward slashes or a bundle
+layout (`Contents/Resources`) that only exists on macOS.
+
+## 13. Phased approach
+
+**Phase G0 — deps + configure.** Install the packages above. Configure with
+`-DCM_GUI=ON` and confirm CMake resolves Freetype, GLFW, GLEW, FFTW, OpenGL.
+Fix G1/G2 here — they are configure-time, not compile-time.
+
+**Phase G1 — build `grappix` alone.** `ninja -C builds/release grappix`. This
+isolates G4 (vendored C/C++ strictness) from all the app code and keeps the
+error volume manageable — the same "one component at a time" loop that worked
+for the plugins.
+
+**Phase G2 — link `chipmachine.exe`.** `ninja -C builds/release chipmachine`.
+This is where G3 (missing Win32 system libs) surfaces. Also add the
+`-Wl,--stack,33554432` reserve to the target here, matching `cm`/`cmtest`.
+
+**Phase G3 — run it.** Window opens, browser renders, Enter plays. Expect the
+first issues to be asset paths (G6) and font loading rather than GL itself.
+
+**Phase G4 — polish.** Native file dialog (G5); verify the `MusicBars` FFT
+visualiser; check window resize and DPI scaling.
+
+## 14. Risks
+
+| Risk | Likelihood | Mitigation |
+| --- | --- | --- |
+| Static-vs-shared GLFW/GLEW link mismatch (`__imp_*`) | **High** | Exactly the class of bug already hit in milestone 1; fix by adding Win32 system libs + `GLEW_STATIC`, or force the DLL variants. |
+| GLEW config/module-mode variable mismatch (G2) | **High** | One-line `find_package` fix; verify `GLEW_LIBRARIES` is non-empty at configure time. |
+| `xxd` missing / shell redirect in custom command | **Medium** | Install `vim`, or replace with a CMake-native hex generator (preferred). |
+| grappix vendored C fails under GCC 16 | Medium | Global flag batch from milestone 1 already covers the common cases. |
+| OpenGL driver/context issues in VM or RDP sessions | Medium | grappix needs a real GL context; test on a physical GPU session, not RDP/headless. Mesa `llvmpipe` is a fallback. |
+| DPI scaling / window sizing on Windows 11 | Low–Med | GLFW handles the basics; may need a per-monitor-DPI manifest for crisp text. |
+| Native file dialog absent | Low | Cosmetic for the milestone; documented as G5 follow-up. |
+
+## 15. Open decisions
+
+1. **Static or shared GLFW/GLEW?** Shared (DLL) links more easily but requires
+   shipping the DLLs beside `chipmachine.exe`. Static gives a self-contained
+   binary but needs the Win32 system libs from G3. *Recommendation:* start
+   shared to get running, revisit for distribution.
+2. **Replace `xxd`?** Worth doing properly (G1) — it removes a vim dependency
+   and a shell redirect from the build.
+3. **Re-enable disabled plugins?** The GUI inherits the milestone-1
+   `WIN32_DISABLED_PLUGINS` set. `dmfplugin` (DefleMask) and `mikmodplugin`
+   remain the two most worth restoring; see §5.
+4. **Does the GUI need `TEXTMODE_ONLY` peers?** `src/textmode.cpp` is in *both*
+   `MAIN_FILES` and `GUI_FILES`; confirm it compiles once and isn't duplicated
+   into the `chipmachine` link.
