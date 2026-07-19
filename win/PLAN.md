@@ -287,37 +287,38 @@ Notes:
 These are identified from reading the build files, ordered by how likely they
 are to bite. None is deep — but each will stop the build cold.
 
-**G1. `xxd` shader embedding — `grappix/CMakeLists.txt:120`**
-Shaders are embedded by shelling out to `xxd -i`:
-```cmake
-COMMAND xxd -i .shader/${SHADERNAME} > ${SHADERNAME}.c
-```
-`xxd` ships with **vim**, which is not installed in MSYS2 by default. Two fixes:
-- *Quick*: `pacman -S vim`.
-- *Better*: replace with a CMake-native generator (a small `-P` script using
-  `file(READ ... HEX)`), removing an external tool from the build entirely. This
-  also fixes the shell redirect `>`, which is not portable to non-shell
-  generators. **Recommended** — it's the same class of fix as the `ld -r`
-  response files.
+**G1. `xxd` shader embedding — ✅ FIXED**
+Shaders were embedded by shelling out to `xxd -i` with a `>` redirect, which
+needs **vim** (absent from a default MSYS2 install) and a POSIX shell. Replaced
+with `external/apone/mods/grappix/bin2c.cmake`, a CMake-native generator
+(`file(READ ... HEX)` + one regex pass), invoked via `cmake -P`.
 
-**G2. `find_package(glew REQUIRED)` — `grappix/CMakeLists.txt:62`**
-Lowercase `glew` searches for `glewConfig.cmake`/`glew-config.cmake` (config
-mode). The WIN32 branch then uses `${GLEW_LIBRARIES}`/`${GLEW_INCLUDE_DIRS}`,
-which are set by CMake's **`FindGLEW` module** (uppercase). So even when the
-package is found, those variables may be empty. Expected fix: `find_package(GLEW
-REQUIRED)` and/or link the imported target `GLEW::GLEW`.
+The symbol names had to be reproduced exactly, because `grappix/shader.cpp`
+declares them by hand (`extern unsigned char _shader_plain_v_glsl[];`) — xxd
+derived those from the path `.shader/plain_v.glsl` by mapping every
+non-alphanumeric character to `_`. **Verified against real `xxd` output**: byte
+sequence, symbol names, and length all identical. Applied on every platform (not
+Windows-only) so the build no longer depends on vim anywhere.
 
-**G3. Static GLFW/GLEW need Win32 system libs — `grappix/CMakeLists.txt:63`**
-```cmake
-find_library(GLFW_LIBRARY NAMES libglfw3.a glfw3 glfw3dll REQUIRED)
-```
-`libglfw3.a` is listed **first**, so the static library wins. Static GLFW on
-Windows requires `gdi32` (and `user32`/`shell32`); static GLEW requires
-`-DGLEW_STATIC` and `opengl32`. The `UNIX` branch adds its X11 equivalents but
-the `WIN32` branch adds **no** system libs — expect undefined references to
-`__imp_CreateWindowExW`, `__imp_wglCreateContext`, etc. Fix: append
-`gdi32 opengl32 user32 shell32` to `EXTRA_LIBS` on WIN32, and define
-`GLEW_STATIC` if the static GLEW is selected.
+**G2. `find_package(glew REQUIRED)` — ✅ FIXED**
+Lowercase `glew` searches *config* mode (`glew-config.cmake`) and does **not**
+define `GLEW_INCLUDE_DIRS`/`GLEW_LIBRARIES` or the `GLEW::GLEW` target the
+branch relied on — so it could "succeed" while contributing no include path and
+no library. Now `find_package(GLEW REQUIRED)` (module mode), linking the
+`GLEW::GLEW` imported target.
+
+**G3. GLFW/GLEW linkage — ✅ FIXED (shared/DLL chosen)**
+`libglfw3.a` was listed first, so the **static** library won while the `WIN32`
+branch added no Win32 system libs (unlike `UNIX`, which adds its X11 set) —
+that would surface as undefined `__imp_CreateWindowExW` / `__imp_wglCreateContext`.
+Decision: **shared (DLL)** — `find_library(GLFW_LIBRARY NAMES glfw3dll glfw3)`
+prefers MSYS2's `libglfw3dll.a` import library, and `GLEW::GLEW` defaults to the
+DLL. `gdi32 user32 shell32` added regardless.
+
+> **Runtime note:** with shared linkage, `glfw3.dll` and `glew32.dll` must be
+> findable. They resolve from `/mingw64/bin` inside the MINGW64 shell, but for
+> distribution they must be copied beside `chipmachine.exe` (as is already done
+> for the SunVox library).
 
 **G4. First-ever compile of grappix on Windows**
 `cm` never built grappix, so none of it has been through MinGW/GCC 16. Expect a
@@ -377,12 +378,12 @@ visualiser; check window resize and DPI scaling.
 
 ## 15. Open decisions
 
-1. **Static or shared GLFW/GLEW?** Shared (DLL) links more easily but requires
-   shipping the DLLs beside `chipmachine.exe`. Static gives a self-contained
-   binary but needs the Win32 system libs from G3. *Recommendation:* start
-   shared to get running, revisit for distribution.
-2. **Replace `xxd`?** Worth doing properly (G1) — it removes a vim dependency
-   and a shell redirect from the build.
+1. **Static or shared GLFW/GLEW?** — ✅ **Decided: shared (DLL).** Simpler link,
+   no `GLEW_STATIC`/system-lib juggling. Cost: `glfw3.dll` + `glew32.dll` must
+   ship beside `chipmachine.exe`. Revisit if a self-contained binary is wanted
+   for distribution.
+2. **Replace `xxd`?** — ✅ **Done** (G1): `bin2c.cmake`, verified byte-identical
+   to xxd output.
 3. **Re-enable disabled plugins?** The GUI inherits the milestone-1
    `WIN32_DISABLED_PLUGINS` set. `dmfplugin` (DefleMask) and `mikmodplugin`
    remain the two most worth restoring; see §5.
