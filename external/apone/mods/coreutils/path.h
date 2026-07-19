@@ -29,16 +29,21 @@ class path
     {
         int start = 0;
         isRelative = true;
-        if (name[0] == '/') {
+        // Bounds-checked: name may be empty or 1 char. Reading name[1]/name[2]
+        // without a length guard is out-of-range on such strings -- undefined
+        // behaviour that a non-hardened libstdc++ tolerates (the byte past the
+        // terminator is rarely ':') but which _GLIBCXX_ASSERTIONS (on by default
+        // in MSYS2) turns into an abort. Guard every index past [0].
+        if (!name.empty() && name[0] == '/') {
             format = Format::Unix;
             start++;
             isRelative = false;
-        } else if (name[1] == ':') {
+        } else if (name.length() >= 2 && name[1] == ':') {
             format = Format::Win;
             segments.push_back(name.substr(0, 2));
             hasRootDir = true;
             start += 2;
-            if (name[2] == '\\' ||  name[2] == '/') {
+            if (name.length() >= 3 && (name[2] == '\\' || name[2] == '/')) {
                 isRelative = false;
                 start++;
             }

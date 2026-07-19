@@ -1,0 +1,3 @@
+builds/release/cm -X
+Clearing Web Cache (DB update detected)...
+C:/msys64/mingw64/include/c++/16.1.0/bits/basic_string.h:1373: std::__cxx11::basic_string<_CharT, _Traits, _Alloc>::const_reference std::__cxx11::basic_string<_CharT, _Traits, _Alloc>::operator[](size_type) const [with _CharT = char; _Traits = std::char_traits<char>; _Alloc = std::allocator<char>; const_reference = const char&; size_type = long long unsigned int]: Assertion '__pos <= size()' failed.
