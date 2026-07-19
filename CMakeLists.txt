@@ -402,6 +402,19 @@ target_link_libraries(chipmachine PRIVATE
     swresample
 )
 target_compile_definitions(chipmachine PRIVATE -DAPP_NAME=chipmachine)
+if(WIN32)
+    # Windows defaults to a 1 MB stack; Linux/macOS give 8 MB. A MusicDatabase
+    # holds two SearchIndex members, each with `std::vector<int> stringMap[65536]`
+    # (~1.5 MB), so a single stack-local MusicDatabase is ~3 MB and overflows
+    # instantly -- this is what crashed cmtest before its first assertion. The PE
+    # stack reserve is also the default for threads created without an explicit
+    # size, including the MusicPlayerList song-loading worker. Reserve 32 MB
+    # (address space only, committed on use), matching cm/cmtest.
+    #
+    # NOTE: no -mconsole here, unlike cm/cmtest -- the GUI wants the global
+    # -mwindows (GUI subsystem, no console window) that the WIN32 block sets.
+    target_link_options(chipmachine PRIVATE -Wl,--stack,33554432)
+endif()
 endif() # CM_GUI
 
 # The text-mode player. Built on every platform, including Windows (MinGW) --
