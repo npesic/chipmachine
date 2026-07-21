@@ -771,3 +771,31 @@ its own stdin before EOF); the freeze needed a teardown *while backpressured*
 
 **Impact:** fixes the "streamed song plays then app hangs" freeze for all
 progressive-stream formats (mp3/ogg/flac/wav/mp2/opus) on Windows.
+
+## 25. UnExoticA/LHA modules don't play — path helpers split on '/' only
+
+Symptom: UnExoticA tunes (`<archive>.lha/<member>`) download and extract fine,
+but the extracted module never plays — no plugin claims it. Debug log shows the
+member reaching `canHandle` as an all-backslash local path:
+`c:\users\lab\.cache\chipmachine\_lha2\...intro.lha\mod.cubes of silver`.
+
+Root cause: the Modland/UnExoticA naming puts the **format in the filename
+prefix** (`mod.<title>` = a Protracker module), and plugins detect it via
+`utils::path_prefix()`. But `path_prefix` (and `path_basename`,
+`path_directory`, `path_extension`) split on `path_separator`, a **compile-time
+constant `'/'`** (utils.h) — never `'\\'`, even on Windows. On the backslash
+path, `rfind('/')` returns npos → search starts at index 0 → `find('.')` lands on
+the **first** dot in the string (`\.cache`), so `path_prefix` returned
+`"c:\users\lab\"` instead of `"mod"`. Format unrecognised → no plugin claimed the
+file → silence. (`path_filename` was already correct — `find_last_of("/\\")` —
+the other four just never got the Windows treatment.)
+
+**Fix (`coreutils/utils.cpp`):** `path_basename`, `path_directory`,
+`path_extension`, `path_prefix` now use `find_last_of("/\\")`, matching
+`path_filename`. Forward-slash inputs are unaffected (identical result), so the
+macOS/Linux baseline is unchanged; added a backslash regression test to lock it
+in. This is the general fix for **any** local-file format detection on Windows,
+not just LHA — extracted ZIP members and cache-file routing benefit too.
+
+**Note:** shared code — re-run `cmtest` on macOS/Linux to confirm no baseline
+shift (expected clean: `/`-paths behave identically).

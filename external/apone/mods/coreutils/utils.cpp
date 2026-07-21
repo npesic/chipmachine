@@ -287,7 +287,13 @@ std::string toLower(const std::string& s) {
 }
 
 std::string path_basename(const std::string& name) {
-    auto slashPos = name.rfind(path_separator);
+    // Split on either separator: on Windows a local path uses '\\' (e.g. an
+    // LHA/ZIP-extracted member "...\\mod.title"), and path_separator is the
+    // compile-time '/'. Matching only '/' left the whole backslash path as the
+    // "basename" and made rfind('.') land on an earlier dir dot (".cache"),
+    // corrupting basename/prefix/extension detection so prefix-typed modules
+    // (Modland/UnExoticA "mod.<title>") were never claimed by any plugin.
+    auto slashPos = name.find_last_of("/\\");
     if (slashPos == std::string::npos)
         slashPos = 0;
     else
@@ -301,7 +307,7 @@ std::string path_basename(const std::string& name) {
 
 std::string path_directory(const std::string& name) {
     // return fs::path(name).parent_path().string();
-    auto slashPos = name.rfind(path_separator);
+    auto slashPos = name.find_last_of("/\\"); // accept '\\' too (Windows paths)
     if (slashPos == std::string::npos) slashPos = 0;
     return name.substr(0, slashPos);
 }
@@ -318,7 +324,7 @@ std::string path_filename(const std::string& name) {
 
 std::string path_extension(const std::string& name) {
     auto dotPos = name.rfind('.');
-    auto slashPos = name.rfind(path_separator);
+    auto slashPos = name.find_last_of("/\\"); // accept '\\' too (Windows paths)
     if (slashPos == std::string::npos)
         slashPos = 0;
     else
@@ -332,7 +338,7 @@ std::string path_suffix(const std::string& name) {
 }
 
 std::string path_prefix(const std::string& name) {
-    auto slashPos = name.rfind(path_separator);
+    auto slashPos = name.find_last_of("/\\"); // accept '\\' too (Windows paths)
     if (slashPos == std::string::npos)
         slashPos = 0;
     else
@@ -623,6 +629,18 @@ TEST_CASE("utils::path", "Path name operations") {
     REQUIRE(path_extension(test3) == "");
     REQUIRE(path_basename(test3) == "");
     REQUIRE(path_directory(test3) == "/my/pa.th");
+
+    // Windows backslash paths: an LHA/ZIP-extracted member arrives as a local
+    // path with '\\' separators, and the music type lives in the filename's
+    // prefix (Modland/UnExoticA "mod.<title>"). Splitting on '/' only made every
+    // helper mis-parse this, so no plugin recognised the module. All four must
+    // treat '\\' as a separator (matching path_filename).
+    const std::string win =
+        "c:\\users\\lab\\.cache\\_lha2\\a.lha\\mod.cubes of silver";
+    REQUIRE(path_prefix(win) == "mod");
+    REQUIRE(path_basename(win) == "mod");
+    REQUIRE(path_filename(win) == "mod.cubes of silver");
+    REQUIRE(path_directory(win) == "c:\\users\\lab\\.cache\\_lha2\\a.lha");
 }
 
 #endif
