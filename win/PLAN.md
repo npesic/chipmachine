@@ -632,10 +632,29 @@ were all outside UADE:
    (deliberate — see plugin_register.cpp comments) registration order on every
    platform. This removes a whole class of latent nondeterministic routing.
 
-3. **Ayfly `jaanmus.sqt` + `prom.asc` render silent** (2 `g_errors` → the
-   coverage gate). These are the last blocker: a genuine ZX-AY vendored-engine
-   playback difference under MinGW (SQ Tracker / ASC Sound Master), the same
-   class as the SID/FamiTracker hangs — needs a Windows-side probe of why those
-   two sub-formats emit silence. **Open.**
+3. **Ayfly `jaanmus.sqt` + `prom.asc` render silent** (2 `g_errors`). A
+   `AYFLY_DEBUG=1` probe (added to `AyflyPlugin.cpp`, prints the detected
+   `player_num` + parsed song length) split this into **two different bugs**:
 
-After fixes 1–2, the only red is the Ayfly pair driving `g_errors <= 0`.
+   - **`jaanmus.sqt` → player_num=10, songlen=0 — FIXED.** Detection is correct
+     (10 = .sqt) but the song parsed empty. Root cause: `SQT_PreInit`
+     (`SQTPlay.h`) stored a **pointer** (`&module[65535]`) in an `unsigned long`
+     end-of-buffer guard. On Windows LLP64 `unsigned long` is 32-bit, truncating
+     the 64-bit heap address, so `(uint64_t)pwrd >= j2` fired on iteration 1 →
+     `false` → empty song → silence. Changed the guard to `uintptr_t`. This also
+     fixed the real app: any `.sqt` was silent on Windows.
+
+   - **`prom.asc` → player_num=4, songlen=17934 — OPEN.** Detection AND parse are
+     correct (other `.asc` fixtures play; `prom.asc` parses a non-empty song),
+     but it renders silent. Investigated `ASC_Detect`/`ASC_Init`/the `ASC*_File`
+     structs — all byte-level and platform-independent (no LLP64 / packing tell).
+     The silence is inside the `ASC_Play` render state machine and needs runtime
+     tracing on Windows (energy/AY-register probe) to localize; not yet
+     root-caused. It is a single fixture.
+
+After fixes 1–2 and the SQT fix, the sole remaining red is `prom.asc`
+(`g_errors == 1`). Decision pending: trace `ASC_Play` on Windows, or treat this
+one fixture as a documented known-gap.
+
+The `AYFLY_DEBUG` probe is opt-in and platform-neutral; keep it while `prom.asc`
+is unresolved, strip it once closed (like the SID/reSID probes).

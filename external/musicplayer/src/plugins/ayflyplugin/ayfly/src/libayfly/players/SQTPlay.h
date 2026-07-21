@@ -57,7 +57,12 @@ bool SQT_PreInit(AYSongInfo &info)
     unsigned char *module = info.module;
     SQT_File *header = (SQT_File *)module;
     int i, i1, i2;
-    unsigned long j2;
+    // j2 holds a POINTER value (&module[65535]) used as an end-of-buffer guard
+    // (see below). It must be pointer-width: on Windows LLP64 `unsigned long` is
+    // 32-bit, so storing a 64-bit heap address here truncated it, making the
+    // `(uint64_t)pwrd >= j2` check fire on the first iteration -> SQT_PreInit
+    // returned false -> empty song -> silence. uintptr_t is 64-bit on Win64.
+    uintptr_t j2;
     unsigned short *pwrd;
     i = SQT_SamplesPointer - 10;
     if(i < 0)
