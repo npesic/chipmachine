@@ -955,12 +955,17 @@ void MusicPlayerList::playCurrent()
                     // here by ZIP magic, so it should be a ZipFile -- but never
                     // dereference null (a SIGSEGV here is NOT caught by catch).
                     if (a == nullptr) { throw std::runtime_error("archive open failed"); }
+                    LOGD("ZIP opened '%s' -> dir '%s'", f0.getName(), dir);
+                    int _mcount = 0;
                     for (auto const& m : *a) {
+                        _mcount++;
                         // Skip macOS resource forks and dotfiles -- their ext
                         // would otherwise spoof a bogus track (e.g. ._x.mp3).
                         if (m.rfind("__MACOSX/", 0) == 0) continue;
                         if (path_filename(m).rfind(".", 0) == 0) continue;
                         auto ef = a->extract(m);
+                        LOGD("ZIP member '%s' -> '%s' exists=%d", m,
+                             ef.getName(), (int)utils::File::exists(ef.getName()));
                         auto ext = toLower(path_extension(m));
                         // The extension alone is too weak a test. archive.scene.org
                         // ships a plain TEXT file literally named "scene.org" in
@@ -977,7 +982,13 @@ void MusicPlayerList::playCurrent()
                         else if (audioExt.count(ext) > 0)
                             audio.push_back(ef.getName());
                     }
-                } catch (...) {}
+                    LOGD("ZIP iterated %d member(s), %d song + %d audio track(s)",
+                         _mcount, (int)songs.size(), (int)audio.size());
+                } catch (std::exception& e) {
+                    LOGW("ZIP handling threw: %s", e.what());
+                } catch (...) {
+                    LOGW("ZIP handling threw (unknown)");
+                }
                 std::vector<std::string>& tracks = songs.empty() ? audio : songs;
                 std::sort(tracks.begin(), tracks.end());
                 if (tracks.empty()) {
