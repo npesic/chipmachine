@@ -2851,16 +2851,28 @@ void *tdefl_write_image_to_png_file_in_memory(const void *pImage, int w, int h, 
   #if defined(_MSC_VER) || defined(__MINGW64__)
     static FILE *mz_fopen(const char *pFilename, const char *pMode)
     {
+    #if defined(__MINGW64__) && !defined(_MSC_VER)
+      // MinGW-w64: fopen_s() fails to open files that plain fopen() opens fine
+      // (verified: fopen OK, mz_zip_reader_init_file's fopen_s returns NULL for
+      // the same path) -- a secure-CRT quirk. Use plain fopen, which is what the
+      // rest of the app uses successfully. MSVC keeps fopen_s.
+      return fopen(pFilename, pMode);
+    #else
       FILE* pFile = NULL;
       fopen_s(&pFile, pFilename, pMode);
       return pFile;
+    #endif
     }
     static FILE *mz_freopen(const char *pPath, const char *pMode, FILE *pStream)
     {
+    #if defined(__MINGW64__) && !defined(_MSC_VER)
+      return freopen(pPath, pMode, pStream);
+    #else
       FILE* pFile = NULL;
       if (freopen_s(&pFile, pPath, pMode, pStream))
         return NULL;
       return pFile;
+    #endif
     }
     #ifndef MINIZ_NO_TIME
       #include <sys/utime.h>
