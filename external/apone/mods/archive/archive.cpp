@@ -1,10 +1,35 @@
 
 #include "archive.h"
 
-#define MINIZ_HEADER_FILE_ONLY
-extern "C" {
+// Include the FULL miniz implementation in an anonymous namespace so all of its
+// symbols get INTERNAL linkage and are private to this translation unit.
+//
+// The tree vendors five copies of miniz (apone/mods/miniz, vgmstream x2, zxtune,
+// vice) and several export the same mz_zip_* symbols. On Windows the final link
+// uses -Wl,--allow-multiple-definition, which silently binds our mz_zip_* calls
+// to whichever copy the linker sees first -- and it was picking vgmstream's (a
+// different miniz version) whose reader failed to open our cache zips, so no
+// Demozoo/Zophar archive would extract. Making apone's miniz file-local here
+// removes it from the global symbol pool entirely, so our calls always resolve
+// to this (working) copy regardless of link order. archive.h does not expose any
+// miniz type, so nothing outside this file needs those symbols.
+//
+// miniz.c #includes these libc headers in its implementation; pull them in at
+// GLOBAL scope first so miniz's own (include-guarded) re-includes inside the
+// anonymous namespace are no-ops -- otherwise the libc declarations would be
+// trapped in the anon namespace.
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <time.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <sys/utime.h>
+#endif
+namespace {
 #include <miniz/miniz.c>
-}
+} // anonymous namespace
 //#include "ziplib/zip.h"
 
 #include <vector>
@@ -17,15 +42,6 @@ extern "C" {
 #include  "unrar/dll.hpp"
 
 using namespace std;
-
-// DIAG: defined in miniz.c (compiled as the separate C `miniz` library; this TU
-// includes miniz.c HEADER-ONLY via MINIZ_HEADER_FILE_ONLY, so these are a
-// cross-TU C-linkage symbol). Set by mz_zip_reader_init_file to report which
-// step failed. Temporary -- remove with the LOGW probe once the ZIP bug is fixed.
-extern "C" {
-    extern int g_mz_init_fail_step;
-    extern long long g_mz_init_file_size;
-}
 
 namespace utils {
 
@@ -126,24 +142,9 @@ class ExtArchive : public Archive {
 class ZipFile : public Archive {
 public:
 	ZipFile(const string &fileName, const string &workDir = ".") : workDir(workDir) {
-		// DIAG: probe the exact path miniz will use, via plain fopen, to compare
-		// against miniz's own open (which uses fopen_s on __MINGW64__).
-		{
-			FILE* tf = fopen(fileName.c_str(), "rb");
-			long tsz = -1;
-			if (tf) { fseek(tf, 0, SEEK_END); tsz = ftell(tf); fclose(tf); }
-			LOGW("ZipFile: fopen('%s') = %s size=%ld", fileName.c_str(),
-			     tf ? "OK" : "NULL", tsz);
-		}
-		//zipFile = zip_open(fileName.c_str(), 0, NULL);
 		memset(&zipArchive, 0, sizeof(zipArchive));
 		bool ok = mz_zip_reader_init_file(&zipArchive, fileName.c_str(), 0);
-		// ::g_mz_init_fail_step / ::g_mz_init_file_size are defined at global
-		// scope in miniz.c, which is #included into this TU above -- reference
-		// them qualified so the lookup doesn't resolve to utils::.
-		LOGW("ZipFile: init=%d fail_step=%d (1=fopen 2=seek 3=internal "
-		     "4=central_dir) miniz_size=%lld files=%u",
-		     (int)ok, ::g_mz_init_fail_step, ::g_mz_init_file_size,
+		LOGD("ZipFile: init=%d files=%u", (int)ok,
 		     ok ? (unsigned)zipArchive.m_total_files : 0u);
 		if(!ok)
 			throw archive_exception("Could not open zip file");
