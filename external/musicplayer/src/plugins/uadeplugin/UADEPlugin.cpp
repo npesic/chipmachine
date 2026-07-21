@@ -319,8 +319,18 @@ public:
             }
         }
 
-        LOGD("UADE FILE %s", currentFileName.string().c_str());
-        if (uade_play(currentFileName.string().c_str(), -1, state) == 1) {
+        // Pass the module name with FORWARD slashes (generic_string), not the
+        // native separator. UADE hands this name to the emulated Amiga replay,
+        // which derives companion filenames using Amiga path rules (`/`
+        // separator): TFMX swaps the leading "mdat" of the last path component
+        // for "smpl", Richard Joseph swaps ".sng"->".INS", etc. With Windows
+        // backslashes the player can't find the component boundary and instead
+        // prepends "smpl." to the whole "C:\...\mdat.kraft" path -> the companion
+        // (smpl.kraft) never resolves and the score dies. Forward slashes make
+        // Windows behave like macOS/Linux here; Win32 file APIs accept `/` too.
+        const std::string playName = currentFileName.generic_string();
+        LOGD("UADE FILE %s", playName.c_str());
+        if (uade_play(playName.c_str(), -1, state) == 1) {
             songInfo = uade_get_song_info(state);
             std::string modname = songInfo->modulename;
             if (modname == "<no songtitle>") { modname = ""; }

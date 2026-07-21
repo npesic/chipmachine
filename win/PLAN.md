@@ -656,3 +656,31 @@ assertions in 151 test cases)`, `ERRORS: 0, SKIPS: 19, OK: 751`. The tight
 `g_errors <= 0` gate now protects every enabled plugin on Windows; the only
 carve-outs are the UADE 68k known-gap (exempted, tracked) and the 8 disabled
 plugins.
+
+## 22. UADE known-gap deep-dive — companion-file path separator
+
+Goal: get the ~30 exempted UADE fixtures playing. A `UADE_DEBUG=1` probe (added
+to `amigaloader` in `UADEPlugin.cpp`; prints each companion request → resolved
+path → size) found the root cause — and it is **not** the emulated 68k, it's a
+**path-separator** bug.
+
+`UADEPlugin::load` passed the module name to `uade_play` via
+`currentFileName.string()`, which on Windows uses **backslashes**
+(`C:\...\mdat.kraft`). UADE hands that name to the emulated Amiga replay, which
+derives companion filenames using **Amiga path rules** (`/` separator): TFMX
+swaps the last component's `mdat`→`smpl`, Richard Joseph swaps `.sng`→`.INS`,
+etc. With backslashes the player can't find the component boundary, so it
+*prepends* `smpl.` to the whole path. The probe caught it exactly:
+`req 'smpl.C:\...\mdat.kraft' -> 'mdat.smpl' = MISSING`. The companion never
+loads → "score died". macOS/Linux use `/`, the swap works, the file loads — why
+it passed there.
+
+**Fix:** pass `currentFileName.generic_string()` (forward slashes on every
+platform; Win32 file APIs accept `/`) to `uade_play`, making Windows path
+handling identical to macOS/Linux for every companion-loading UADE format.
+Expected to clear most of the 30 (the `mdat.*` TFMX pairs, the `dns.`/`ash.`/
+`uds.`/`thm.`/... prefix formats, and `.sng`→`.INS`). Any residue that is *not*
+companion-based (e.g. `Two.sid`'s `Illegal instruction 0x4AFC`) is triaged
+separately. The `UADE_DEBUG` probe stays until the remaining count is confirmed,
+then is stripped like the SID/ayfly probes. Once the count reaches 0, the
+`testUadePlugin` wrapper reports a gap of 0 and the exemption becomes a no-op.
