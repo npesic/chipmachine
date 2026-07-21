@@ -102,9 +102,18 @@ inline ExecPipe::ExecPipe(const std::string& cmd)
     HANDLE childStdoutWrite = nullptr;
     HANDLE childStdinRead = nullptr;
 
+    // Buffer size for the pipes. Windows' default (nSize=0) is a mere ~4 KB,
+    // versus 64 KB on POSIX. For the streaming audio path that is far too small:
+    // at 44100*2ch*2B = 176 KB/s of PCM, a 4 KB buffer drains in ~23 ms, so the
+    // non-blocking reader constantly outruns ffmpeg and getSamples() keeps
+    // reporting "buffering" (0 samples) -> audible hiccups. A large buffer lets
+    // ffmpeg run ahead and smooths the reads. (This is why mp3 stuttered while
+    // ogg -- with a slightly steadier decode cadence -- happened to squeak by.)
+    constexpr DWORD kPipeBuf = 1u << 20; // 1 MB (a hint; Windows may round)
+
     // Child stdout -> our hPipeRead ; our hPipeWrite -> child stdin.
-    if (!CreatePipe(&hPipeRead, &childStdoutWrite, &sa, 0) ||
-        !CreatePipe(&childStdinRead, &hPipeWrite, &sa, 0)) {
+    if (!CreatePipe(&hPipeRead, &childStdoutWrite, &sa, kPipeBuf) ||
+        !CreatePipe(&childStdinRead, &hPipeWrite, &sa, kPipeBuf)) {
         hPipeRead = hPipeWrite = hProcess = nullptr;
         return;
     }
