@@ -1,0 +1,568 @@
+modutils completed in 4.5e-05s
+[36m[MusicDatabase.cpp:3904][39m INDEX SKIPPED UNSUPPORTED EXTENSIONS: .arj .lzx .tgz .xz .img .one .flp .ps1 .tic .m8s .legoz .asg .snort .rns .xrns .psy .sn .sn2 .fls .axs .am .sho .bmx .pmd .spm .sps .dux .skm .ct .pol .mgb .edl .fw .smufi .brt .xex .0cc .kftm
+music database completed in 0.437936s
+[34m[FFMPEGPlugin.cpp:200][39m FFMPEG PLUGIN INITIALIZED WITH PATH 'bin\ffmpeg.exe'
+musicplayerlist completed in 0.335719s
+musicplayer completed in 0.013949s
+MusicPlayer fetches the playing plugin's secondary files completed in 0.001274s
+STarKos host path plays sound completed in 0.039917s
+OPL Archive routes to libvgm and plays completed in 0.007322s
+VGMRips non-Sega VGM routes to libvgm completed in 0.001861s
+VGMRips format labels classify to a platform completed in 0.026813s
+generic-tagged demoscene tunes classify by extension completed in 0.030932s
+SMS Power format labels classify to a platform completed in 0.032869s
+Zophar format labels classify to a platform completed in 0.032034s
+mirsoft platform labels classify to a platform completed in 0.026984s
+[36m[MusicDatabase.cpp:3904][39m INDEX SKIPPED UNSUPPORTED EXTENSIONS: .arj .lzx .tgz .xz .img .one .flp .ps1 .tic .m8s .legoz .asg .snort .rns .xrns .psy .sn .sn2 .fls .axs .am .sho .bmx .pmd .spm .sps .dux .skm .ct .pol .mgb .edl .fw .smufi .brt .xex .0cc .kftm
+[36m[MusicDatabase.cpp:4016][39m DBVERSION 98 INDEXVERSION 98 SQLITEVERSION 98
+[36m[MusicDatabase.cpp:4068][39m Initialized DBs: World of Game MODs, unexotica, Vampi MDX, Zophar, VGMRips, SMS Power, CPC-Power, OPL Archive, Demozoo, scene.org, modarchive, zxart.ee, zxtunes.com, Playlists, HVSC, Gamebase64, CSDb, Modland, Amp, Bitworld, HVTC, Project AY, snesmusic.org, sndh, asma, remix.kwed.org, amigaremix, scenesat, Chipmusic, Battle of the Bits, OC ReMix, keygenmusic, Demovibes, Amigavibes, Radio, Syntax Error, NSFE, C64 Take-away, Completely Unnecessary Podcast, This Week in Chiptune, Pixelated Audio, GameFuel, Nitro Game Injection, Pouet/Youtube, Manual Patch
+search keeps same-name different-format songs completed in 0.455612s
+[34m[FFMPEGPlugin.cpp:221][39m FFMPEGPlugin::canHandle checking 'testmus/mirsoft/hoi-level4.dmu'
+[36m[UADEPlugin.cpp:849][39m UADE data data
+[36m[UADEPlugin.cpp:25][39m Starting thread
+[36m[UADEPlugin.cpp:302][39m UADE FILE C:\msys64\home\lab\git\chipmachine\testmus\mirsoft\hoi-level4.dmu
+mirsoft game modules play via the host path completed in 0.050184s
+isLocalAsset marks shipped collections completed in 3e-05s
+local-dir files report local and are never cached completed in 0.025993s
+Project AY .ay routes to GME and plays completed in 0.001751s
+Arkos Tracker AKS plays sound completed in 0.332997s
+---- LHA extract ----
+Spirit_of_Excalibur.lha (wrapper strip + instruments/ subdir)
+  extracted some members                                  [32mok[0m
+  song smus.title at root                                 [32mok[0m
+  wrapper dir stripped                                    [32mok[0m
+  instruments/ subdir kept                                [32mok[0m
+Einmal_Kanzler_sein.lha (Amiga name\0comment filename fix)
+  extracted > 50 members                                  [32mok[0m
+  real name mdat.ingame_01 recovered                      [32mok[0m
+  comment garbage ' Traveling Bits' absent                [32mok[0m
+LHA extract strips wrapper, keeps subdirs completed in 0.085168s
+FFMPEG claims 8svx samples completed in 2.3e-05s
+FFMPEG claims lossless PCM and mp2 extensions completed in 6.5e-05s
+willStream picks streaming vs full-download completed in 0.000191s
+---- Game Music Engine ----
+Trying testmus/gme/agent-x1.emul ... playback OK
+Trying testmus/gme/airfoce-delta.gbs ... playback OK
+Trying testmus/gme/Alchemia.sap ... playback OK
+Trying testmus/gme/art alive.gym ... playback OK
+Trying testmus/gme/batman.vgm ... playback OK
+Trying testmus/gme/batman.vgz ... playback OK
+Trying testmus/gme/castlevania.nsfe ... playback OK
+Trying testmus/gme/cpc-tribalmag5.ay ... playback OK
+Trying testmus/gme/deadline.sap ... playback OK
+Trying testmus/gme/dragon quest 3.gbr ... playback OK
+Trying testmus/gme/Dynamite Headdy.sgc ... playback OK
+Trying testmus/gme/fantasia-00.gym ... playback OK
+Trying testmus/gme/impossamole.hes ... playback OK
+Trying testmus/gme/ironfist-chasehq2.ay ... playback OK
+Trying testmus/gme/kung fu master.gbr ... playback OK
+Trying testmus/gme/mima-01.spc ... playback OK
+Trying testmus/gme/mr driller.gbr ... playback OK
+Trying testmus/gme/new rally-x.nsf ... playback OK
+Trying testmus/gme/pandora.sap ... playback OK
+Trying testmus/gme/Parlour Games [SMS].sgc ... playback OK
+Trying testmus/gme/smspower-aceofaces-psg.vgm ... playback OK
+Trying testmus/gme/smspower-cyborghunter-fm.vgm ... playback OK
+Trying testmus/gme/sonic.kss ... playback OK
+Trying testmus/gme/Starquake.ay ... playback OK
+Trying testmus/gme/vectrex-berzerk.vgz ... playback OK
+Trying testmus/gme/vectrex-heads up.vgz ... playback OK
+Trying testmus/gme/vectrex-scramble.vgz ... playback OK
+Trying testmus/gme/WizardsLair.ay ... playback OK
+GME completed in 0.251896s
+---- libvgm ----
+Trying testmus/libvgm/2a03fox - Snowgoons vs Acid (OPL2).vgz ... playback OK
+Trying testmus/libvgm/capcom-dual-ay8910.vgz ... playback OK
+Trying testmus/libvgm/capcom-qsound.vgz ... playback OK
+Trying testmus/libvgm/gameboy-dmg.vgz ... playback OK
+Trying testmus/libvgm/namco-c140.vgz ... playback OK
+Trying testmus/libvgm/neogeo-ym2610.vgz ... playback OK
+Trying testmus/libvgm/nes-2a03.vgz ... playback OK
+Trying testmus/libvgm/pc98-opn.vgz ... playback OK
+Trying testmus/libvgm/pce-huc6280.vgz ... playback OK
+Trying testmus/libvgm/Zero - Shinespark (OPL3).vgz ... playback OK
+LibVGM completed in 0.02145s
+---- vgmstream ----
+Trying testmus/vgmstream/(mov) 07370048.lwav ... playback OK
+Trying testmus/vgmstream/00197.MUSX ... playback OK
+Trying testmus/vgmstream/14 Land of Benediction.dvi ... playback OK
+Trying testmus/vgmstream/bakamitai.adx ... playback OK
+Trying testmus/vgmstream/banner.bcwav ... playback OK
+Trying testmus/vgmstream/BGM001.AUS ... playback OK
+Trying testmus/vgmstream/BGM_05.spsd ... playback OK
+Trying testmus/vgmstream/BONUS_SEIKOU.ss2 ... playback OK
+Trying testmus/vgmstream/c7db5f80.eam ... playback OK
+Trying testmus/vgmstream/CmbtLps6~Cmbat8aI (sdx).asf ... playback OK
+Trying testmus/vgmstream/lose.at3 ... playback OK
+Trying testmus/vgmstream/MFX_02.GENH ... playback OK
+Trying testmus/vgmstream/MUSIC8_1 ~ James Bond Theme (end).xa ... playback OK
+Trying testmus/vgmstream/music_06_b.dsp ... playback OK
+Trying testmus/vgmstream/op.oma ... playback OK
+Trying testmus/vgmstream/SLUS-01449_FIFA0000.STR ... playback OK
+Trying testmus/vgmstream/town006.adp ... playback OK
+VGMStream completed in 0.012157s
+VGMStream host path plays sound completed in 0.001101s
+GME SGC plays sound completed in 0.000556s
+GME SGC SMS FM plays sound completed in 0.017366s
+GME plays SMS Power VGM (PSG + FM) completed in 0.003478s
+GME GBR plays sound completed in 0.001488s
+GME Vectrex AY VGM plays sound completed in 0.002528s
+GME packed GYM plays sound completed in 0.138278s
+---- AdPlug ----
+Trying testmus/adlib/2.hsc ... playback OK
+Trying testmus/adlib/action.pis ... playback OK
+Trying testmus/adlib/america2.rol ... playback OK
+Trying testmus/adlib/antspant.imf ... playback OK
+Trying testmus/adlib/aurora.mad ... playback OK
+[90mIgnored testmus/adlib/bass beat.dtl[0m
+Trying testmus/adlib/benezuck.pis ... playback OK
+Trying testmus/adlib/break back.xms ... playback OK
+Trying testmus/adlib/bydlo.bam ... playback OK
+Trying testmus/adlib/child1.xsm ... playback OK
+Trying testmus/adlib/comic bakery!.sat ... playback OK
+Trying testmus/adlib/commando hiscore.amd ... playback OK
+[90mIgnored testmus/adlib/copper.vib[0m
+Trying testmus/adlib/countrytune.dfm ... playback OK
+[90mIgnored testmus/adlib/crooner.d01[0m
+[33mSkipping testmus/adlib/cruisin' mah '95 pimpmobile.fmk[0m
+Trying testmus/adlib/crystal intro.sa2 ... playback OK
+Trying testmus/adlib/demo1.jbm ... playback OK
+[33mSkipping testmus/adlib/dizzy fast food.sig[0m
+Trying testmus/adlib/dtm track 2.dtm ... playback OK
+Trying testmus/adlib/dune - arrakis.agd ... playback OK
+Trying testmus/adlib/dune - arrakis.sdb ... playback OK
+Trying testmus/adlib/dune ii - 00.adl ... playback OK
+Trying testmus/adlib/dune1.dro ... playback OK
+Trying testmus/adlib/easy1.xsm ... playback OK
+Trying testmus/adlib/eiserne front bbstro tune.xad ... playback OK
+Trying testmus/adlib/fdance06.dmo ... playback OK
+Trying testmus/adlib/groovy.mkj ... playback OK
+Trying testmus/adlib/human nature.d00 ... playback OK
+Trying testmus/adlib/infopack track.dtm ... playback OK
+[90mIgnored testmus/adlib/insts.dat[0m
+Trying testmus/adlib/intro.m ... playback OK
+Trying testmus/adlib/karsten obarski - amegas.a2m ... playback OK
+Trying testmus/adlib/ken's labyrinth - begin.ksm ... playback OK
+Trying testmus/adlib/kgb - burokrat.sqx ... playback OK
+Trying testmus/adlib/kq1 flutey.sci ... playback OK
+[90mIgnored testmus/adlib/kq1patch.003[0m
+Trying testmus/adlib/lardossian synthesis.a2m ... playback OK
+Trying testmus/adlib/loader.adlib ... playback OK
+Trying testmus/adlib/logical - 13310.plx ... playback OK
+Trying testmus/adlib/maxosong.ksm ... playback OK
+Trying testmus/adlib/meanwhile.laa ... playback OK
+Trying testmus/adlib/mein erster versuch !!!.amd ... playback OK
+Trying testmus/adlib/osmo-1.hsc ... playback OK
+Trying testmus/adlib/playmus1.sng ... playback OK
+Trying testmus/adlib/psg.a2m ... playback OK
+Trying testmus/adlib/roster.imf ... playback OK
+Trying testmus/adlib/sanxion.sng ... playback OK
+Trying testmus/adlib/satellite one.mtr ... playback OK
+[90mIgnored testmus/adlib/sb main.fmf[0m
+Trying testmus/adlib/schwert und skelett mix.a2m ... playback OK
+[90mIgnored testmus/adlib/shadowlands (roofworlds).cal[0m
+Trying testmus/adlib/shelter.mtk ... playback OK
+[90mIgnored testmus/adlib/song1.ins[0m
+Trying testmus/adlib/song1.sng ... playback OK
+Trying testmus/adlib/sonic.a2m ... playback OK
+[90mIgnored testmus/adlib/standard.bnk[0m
+Trying testmus/adlib/starport bbs introtune.as3m ... playback OK
+Trying testmus/adlib/starport bbs introtune.rad ... playback OK
+Trying testmus/adlib/stratego.raw ... playback OK
+Trying testmus/adlib/sun dance.cff ... playback OK
+Trying testmus/adlib/tyrian02 - asteroid dance part 1.lds ... playback OK
+Trying testmus/adlib/voyages of discovery - happy.cmf ... playback OK
+[33mSkipping testmus/adlib/xmas lemmings - m1.lem[0m
+AdPlug completed in 0.633025s
+AdPlug SCI secondary patch completed in 2.3e-05s
+Westwood SND plays sound completed in 0.023859s
+RSID plays sound completed in 0.089165s
+---- UADE ----
+Trying testmus/uade/0.mk2 ... playback OK
+[33mSkipping testmus/uade/1.x[0m
+Trying testmus/uade/1943.jb ... playback OK
+Trying testmus/uade/3rdblock.ntp ... playback OK
+Trying testmus/uade/5thGear.hip ... playback OK
+Trying testmus/uade/64 conversion.tme ... playback OK
+Trying testmus/uade/7demosng1.mug ... playback OK
+Trying testmus/uade/9 lives.avp ... playback OK
+Trying testmus/uade/a prehistoric tale end.soc ... playback OK
+Trying testmus/uade/abk.mod ... playback OK
+Trying testmus/uade/ACE II.smus ... [31mTrying testmus/uade/ACE II.smus ... playback FAILED[0m
+Trying testmus/uade/achybreakyind.mmd0 ... playback OK
+Trying testmus/uade/action fighter.core ... playback OK
+Trying testmus/uade/action.aps ... playback OK
+Trying testmus/uade/advanced ski simulator.sb ... playback OK
+Trying testmus/uade/agony-level1.aam ... playback OK
+Trying testmus/uade/agravain.dmu ... playback OK
+Trying testmus/uade/airball-gameover.ps ... playback OK
+Trying testmus/uade/airballtest.sog ... playback OK
+[90mIgnored testmus/uade/alien storm.md[0m
+Trying testmus/uade/AMAZE.fc13 ... playback OK
+Trying testmus/uade/amber moon15.sa ... playback OK
+Trying testmus/uade/amberstar (01).hipc ... playback OK
+Trying testmus/uade/amberstar-extro.hip7 ... playback OK
+Trying testmus/uade/amos.gmc ... playback OK
+Trying testmus/uade/amsyntdemo.adsc ... playback OK
+[90mIgnored testmus/uade/amsyntdemo.adsc.as[0m
+Trying testmus/uade/angel harp.mms ... playback OK
+Trying testmus/uade/angelscrack.dm ... playback OK
+Trying testmus/uade/angelscrack.dm1 ... playback OK
+[90mIgnored testmus/uade/aquatic games.ins[0m
+Trying testmus/uade/aquatic games.sng ... playback OK
+Trying testmus/uade/artura.bd ... playback OK
+Trying testmus/uade/ash.cj in the usa ... [31mTrying testmus/uade/ash.cj in the usa ... playback FAILED[0m
+Trying testmus/uade/ash.nobby the aardvark ... [31mTrying testmus/uade/ash.nobby the aardvark ... playback FAILED[0m
+[90mIgnored testmus/uade/ASH1.OPM[0m
+Trying testmus/uade/astarrsonix.mk2 ... playback OK
+Trying testmus/uade/astra 1.rk ... playback OK
+Trying testmus/uade/atmos.mso ... playback OK
+Trying testmus/uade/australian pioneers intro.hip7 ... playback OK
+Trying testmus/uade/Awesome.cust ... playback OK
+Trying testmus/uade/a_dream_of_fish.prt ... playback OK
+Trying testmus/uade/b-manipulation.arp ... playback OK
+Trying testmus/uade/bachbell.mod ... playback OK
+Trying testmus/uade/baller2.mk2 ... playback OK
+Trying testmus/uade/Baller3.mkii ... playback OK
+Trying testmus/uade/balrog.dln ... playback OK
+Trying testmus/uade/baseheads.ma ... playback OK
+Trying testmus/uade/battle squadron title.cm ... playback OK
+Trying testmus/uade/battlecommand ingame.jd ... playback OK
+Trying testmus/uade/battleships.rho ... playback OK
+Trying testmus/uade/beast-busters.ims ... playback OK
+Trying testmus/uade/beast1.title.dw ... playback OK
+Trying testmus/uade/beatlesound 8-ch.okt ... playback OK
+[90mIgnored testmus/uade/best of guitars.ip[0m
+[90mIgnored testmus/uade/best of guitars.ip.l[0m
+[90mIgnored testmus/uade/best of guitars.ip.n[0m
+Trying testmus/uade/best of guitars.sdata ... playback OK
+Trying testmus/uade/blacklamp.gray ... playback OK
+Trying testmus/uade/bladerunner.ea ... playback OK
+Trying testmus/uade/blazing thunder.hd ... playback OK
+Trying testmus/uade/blinkys scary school-sfx.tw ... playback OK
+Trying testmus/uade/bombfusion.riff ... playback OK
+Trying testmus/uade/Bomb_Jack.fred ... playback OK
+Trying testmus/uade/boulderdash.spl ... playback OK
+Trying testmus/uade/budokan.rh ... playback OK
+Trying testmus/uade/c64style.dm ... playback OK
+Trying testmus/uade/californiagames2.dl ... playback OK
+[90mIgnored testmus/uade/cannon fodder (intro).ins[0m
+Trying testmus/uade/cannon fodder (intro).sng ... playback OK
+Trying testmus/uade/cannonfodder.tcb ... playback OK
+Trying testmus/uade/captain planet and the planeteers - 1.mmdc ... playback OK
+Trying testmus/uade/centerbase act01.osp ... playback OK
+Trying testmus/uade/chan.mod ... playback OK
+Trying testmus/uade/cherry moon.is ... playback OK
+Trying testmus/uade/chinese chess (ingame).mon ... playback OK
+Trying testmus/uade/chubbygristle.bds ... playback OK
+Trying testmus/uade/classic concert.is20 ... playback OK
+Trying testmus/uade/closetothehedge.sa ... playback OK
+Trying testmus/uade/commando.mc ... playback OK
+Trying testmus/uade/count duckula-1.scr ... playback OK
+Trying testmus/uade/count duckula.scr ... playback OK
+Trying testmus/uade/cp.ml ... playback OK
+Trying testmus/uade/crash and burn.dz ... playback OK
+Trying testmus/uade/crazy comets.hip ... playback OK
+Trying testmus/uade/crown arabia.hst ... playback OK
+Trying testmus/uade/cryptoburners.dm ... playback OK
+Trying testmus/uade/crystal.dp ... playback OK
+Trying testmus/uade/cust.my one ... playback OK
+Trying testmus/uade/cust.snake pliscin ... playback OK
+Trying testmus/uade/cybernoid 2.ml ... playback OK
+Trying testmus/uade/daisy.adsc ... playback OK
+[90mIgnored testmus/uade/daisy.adsc.as[0m
+Trying testmus/uade/das erbe.sid2 ... playback OK
+Trying testmus/uade/db.mod ... playback OK
+Trying testmus/uade/deep.mm8 ... playback OK
+Trying testmus/uade/defjam intro.fp ... playback OK
+Trying testmus/uade/delta remix.smod ... playback OK
+[33mSkipping testmus/uade/demo.gtk[0m
+Trying testmus/uade/demo1.mod ... playback OK
+Trying testmus/uade/demon enclosure.mmd1 ... playback OK
+Trying testmus/uade/digital man fixed.syn ... playback OK
+Trying testmus/uade/digital voyage.sas ... playback OK
+Trying testmus/uade/dns.hollywoodpokerpro ingame ... [31mTrying testmus/uade/dns.hollywoodpokerpro ingame ... playback FAILED[0m
+Trying testmus/uade/dns.starball ... [31mTrying testmus/uade/dns.starball ... playback FAILED[0m
+Trying testmus/uade/doofus 1.sm3 ... playback OK
+Trying testmus/uade/doofus 2.sm ... playback OK
+Trying testmus/uade/dragon'sbreath dbfx.dsc ... playback OK
+Trying testmus/uade/dragonflight unicorn.hip ... playback OK
+[90mIgnored testmus/uade/DRUMKIT.SM1[0m
+Trying testmus/uade/dug.fc ... playback OK
+Trying testmus/uade/dynablaster.ast ... playback OK
+Trying testmus/uade/easystyleofmsx.mm4 ... playback OK
+Trying testmus/uade/elf-castle.puma ... playback OK
+Trying testmus/uade/endless piracy crack intro.mcmd ... playback OK
+Trying testmus/uade/ep-crenchantedland.mcmd ... playback OK
+Trying testmus/uade/ep-trmonsterbusiness.mcmd ... playback OK
+Trying testmus/uade/fashionating 1.ex ... playback OK
+Trying testmus/uade/fibonacci.prt ... playback OK
+Trying testmus/uade/flimbo's quest.sqt ... playback OK
+Trying testmus/uade/freehand-miniintro.jam ... playback OK
+Trying testmus/uade/futureshock-gameover.smpro ... playback OK
+Trying testmus/uade/georgglaxo ingame.jo ... playback OK
+Trying testmus/uade/ghostbattle gameover.hip7 ... playback OK
+Trying testmus/uade/graphics are none.pt ... playback OK
+Trying testmus/uade/gunship2000.dw ... playback OK
+Trying testmus/uade/gurksaft.glue ... playback OK
+Trying testmus/uade/hawkeye.bp ... playback OK
+Trying testmus/uade/heaven.ptm ... playback OK
+Trying testmus/uade/housemix.sfx20 ... playback OK
+Trying testmus/uade/hybris light.fred ... playback OK
+Trying testmus/uade/hybris.ymst ... playback OK
+Trying testmus/uade/inconvenient intro.sg ... playback OK
+Trying testmus/uade/indianapolis 500.cus ... playback OK
+Trying testmus/uade/insects in space.jt ... playback OK
+Trying testmus/uade/inspiration is gone.pt ... playback OK
+Trying testmus/uade/irrepressible intro.sg ... playback OK
+Trying testmus/uade/ivan stewart super o r.jpo ... playback OK
+Trying testmus/uade/ivanhoe - bonus.pap ... playback OK
+Trying testmus/uade/jamespond2aga-title.sng ... [31mTrying testmus/uade/jamespond2aga-title.sng ... playback FAILED[0m
+Trying testmus/uade/jc.mod ... playback OK
+Trying testmus/uade/Jester - Stardust Memories.mod ... playback OK
+Trying testmus/uade/jpn.empiresoccer94 ... [31mTrying testmus/uade/jpn.empiresoccer94 ... playback FAILED[0m
+[33mSkipping testmus/uade/jungle in germany.stp[0m
+Trying testmus/uade/king of games.arp ... playback OK
+Trying testmus/uade/knights-of-the-sky-3.gmc ... playback OK
+Trying testmus/uade/kris.mod ... playback OK
+Trying testmus/uade/krymini title.amc ... playback OK
+Trying testmus/uade/leaving teramis 11.hip ... playback OK
+Trying testmus/uade/lefetichemaya.mok ... playback OK
+Trying testmus/uade/legendcrack.fc ... playback OK
+Trying testmus/uade/legendcrack.smod ... playback OK
+Trying testmus/uade/les granges brulees.okta ... playback OK
+Trying testmus/uade/lethal xcess-title.hipc ... playback OK
+Trying testmus/uade/lethalweapon.doda ... playback OK
+Trying testmus/uade/letsdance.bss ... playback OK
+Trying testmus/uade/lionheart - end.lion ... playback OK
+Trying testmus/uade/liquid-kids---over.puma ... playback OK
+Trying testmus/uade/living on video.jam ... playback OK
+Trying testmus/uade/lotus2 dux.cus ... playback OK
+Trying testmus/uade/magicjumper-hiscore.amc ... playback OK
+Trying testmus/uade/mco.a question of sport ... [31mTrying testmus/uade/mco.a question of sport ... playback FAILED[0m
+Trying testmus/uade/mcr.aquablast ... [31mTrying testmus/uade/mcr.aquablast ... playback FAILED[0m
+[90mIgnored testmus/uade/mcs.aquablast[0m
+Trying testmus/uade/mdat.abandonedplaces-part2.1 ... [31mTrying testmus/uade/mdat.abandonedplaces-part2.1 ... playback FAILED[0m
+Trying testmus/uade/mdat.avalon2-ongame ... [31mTrying testmus/uade/mdat.avalon2-ongame ... playback FAILED[0m
+Trying testmus/uade/mdat.hexuma-ice ... [31mTrying testmus/uade/mdat.hexuma-ice ... playback FAILED[0m
+Trying testmus/uade/mdat.karamalz-titel ... [31mTrying testmus/uade/mdat.karamalz-titel ... playback FAILED[0m
+Trying testmus/uade/mdat.kraft ... [31mTrying testmus/uade/mdat.kraft ... playback FAILED[0m
+Trying testmus/uade/mdat.melovatrix ... [31mTrying testmus/uade/mdat.melovatrix ... playback FAILED[0m
+Trying testmus/uade/megabass.dss ... playback OK
+Trying testmus/uade/megd1-01.ems ... playback OK
+Trying testmus/uade/memorybank overflow.arp ... playback OK
+Trying testmus/uade/mfp.crystaldragon ingame ... [31mTrying testmus/uade/mfp.crystaldragon ingame ... playback FAILED[0m
+Trying testmus/uade/MIDI.Entity high ... [31mTrying testmus/uade/MIDI.Entity high ... playback FAILED[0m
+Trying testmus/uade/mod15.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod15.mod ... playback OK
+Trying testmus/uade/mod15_mst.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod15_mst.mod ... playback OK
+Trying testmus/uade/mod15_st-iv.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod15_st-iv.mod ... playback OK
+Trying testmus/uade/mod15_ust.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod15_ust.mod ... playback OK
+Trying testmus/uade/mod_comp.mod ... playback OK
+Trying testmus/uade/mod_doc.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod_doc.mod ... playback OK
+Trying testmus/uade/mod_ntk.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod_ntk.mod ... playback OK
+Trying testmus/uade/mod_ntk1.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod_ntk1.mod ... playback OK
+Trying testmus/uade/mod_ntk2.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod_ntk2.mod ... playback OK
+Trying testmus/uade/mod_ntkamp.lost patrol (death1).mod ... playback OK
+Trying testmus/uade/mod_ntkamp.mod ... playback OK
+Trying testmus/uade/monday.dm2 ... playback OK
+Trying testmus/uade/msx-cracktro 2.sun ... playback OK
+Trying testmus/uade/navyseals.doda ... playback OK
+Trying testmus/uade/newtek.bsi ... playback OK
+Trying testmus/uade/ninjaspirit demo.lme ... playback OK
+[33mSkipping testmus/uade/noname.stp[0m
+Trying testmus/uade/nopushing.work4.ahx ... playback OK
+Trying testmus/uade/north sea inferno ongame1.sc ... playback OK
+Trying testmus/uade/nr.1.bp ... playback OK
+Trying testmus/uade/ocean loader.bp3 ... playback OK
+Trying testmus/uade/octamed.gone away.mmd0 ... playback OK
+Trying testmus/uade/octamed.zoks rave.mmd1 ... playback OK
+Trying testmus/uade/oldgabba.mmd2 ... playback OK
+Trying testmus/uade/one.aero ... [31mTrying testmus/uade/one.aero ... playback FAILED[0m
+Trying testmus/uade/p-47thefreedomfighter.snk ... playback OK
+Trying testmus/uade/p50a.mmd1 ... playback OK
+Trying testmus/uade/panicaco.sa ... playback OK
+[33mSkipping testmus/uade/perfume.dmw[0m
+Trying testmus/uade/powerdrive 1.dsr ... playback OK
+Trying testmus/uade/pp21.noname.mod ... playback OK
+Trying testmus/uade/pr1.mod ... playback OK
+Trying testmus/uade/primemover.hot ... playback OK
+Trying testmus/uade/primitive.sid ... playback OK
+Trying testmus/uade/protector.cus ... playback OK
+Trying testmus/uade/pru2.imagine.mod ... playback OK
+Trying testmus/uade/pushover aztec.doda ... playback OK
+Trying testmus/uade/pushover greek.doda ... playback OK
+Trying testmus/uade/puzznic.tf ... playback OK
+Trying testmus/uade/qang.vss ... playback OK
+Trying testmus/uade/qpa.mod ... playback OK
+Trying testmus/uade/qts.Big Pro ... [31mTrying testmus/uade/qts.Big Pro ... playback FAILED[0m
+Trying testmus/uade/quadlite-mark ii is blue.mk2 ... playback OK
+Trying testmus/uade/r.e.a.l.arp ... playback OK
+Trying testmus/uade/redoctober-sub-docking.ims ... playback OK
+[33mSkipping testmus/uade/rim.x[0m
+Trying testmus/uade/sdr.monsterbusiness 1 ... [31mTrying testmus/uade/sdr.monsterbusiness 1 ... playback FAILED[0m
+Trying testmus/uade/sentinel.dw ... playback OK
+Trying testmus/uade/sir fred - 01.dum ... playback OK
+[90mIgnored testmus/uade/sir fred - 01.ins[0m
+Trying testmus/uade/sir fred-niv0.dum ... playback OK
+[90mIgnored testmus/uade/sir fred-niv0.ins[0m
+Trying testmus/uade/sjs.rudi ... [31mTrying testmus/uade/sjs.rudi ... playback FAILED[0m
+Trying testmus/uade/skt. stefans grav2.mod ... playback OK
+Trying testmus/uade/smooth criminal.sfx ... playback OK
+[90mIgnored testmus/uade/smp.blueangel69[0m
+[90mIgnored testmus/uade/smp.crystaldragon ingame[0m
+[90mIgnored testmus/uade/smp.desert run ste[0m
+[90mIgnored testmus/uade/smp.empiresoccer94[0m
+[90mIgnored testmus/uade/smp.hollywoodpokerpro ingame[0m
+[90mIgnored testmus/uade/smp.nightdawn[0m
+[90mIgnored testmus/uade/smp.obsession loader ste[0m
+[90mIgnored testmus/uade/smp.obsession menu[0m
+[90mIgnored testmus/uade/smp.rudi[0m
+[90mIgnored testmus/uade/smp.set[0m
+[90mIgnored testmus/uade/smp.starball[0m
+[90mIgnored testmus/uade/smp.timelock ingame[0m
+[90mIgnored testmus/uade/smpl.abandonedplaces-part2.1[0m
+[90mIgnored testmus/uade/smpl.avalon2-ongame[0m
+[90mIgnored testmus/uade/SMPL.Entity high[0m
+[90mIgnored testmus/uade/smpl.hexuma-ice[0m
+[90mIgnored testmus/uade/smpl.karamalz-titel[0m
+[90mIgnored testmus/uade/smpl.kraft[0m
+[90mIgnored testmus/uade/smpl.melovatrix[0m
+Trying testmus/uade/snake1.sa ... playback OK
+Trying testmus/uade/sndmon.crystals.bp ... playback OK
+Trying testmus/uade/sndmon.eternity.bp ... playback OK
+Trying testmus/uade/sndmon.popeye - level 2a.bp3 ... playback OK
+Trying testmus/uade/snickle.mug ... playback OK
+Trying testmus/uade/softrock.digi ... playback OK
+Trying testmus/uade/sonate.mod ... playback OK
+[33mSkipping testmus/uade/song2.gtk[0m
+[33mSkipping testmus/uade/song8.gtk[0m
+[90mIgnored testmus/uade/songplay[0m
+Trying testmus/uade/sound of delta.dm2 ... playback OK
+Trying testmus/uade/spacestation.jmf ... playback OK
+Trying testmus/uade/spy vs spy - island caper.cus ... playback OK
+Trying testmus/uade/st. petersburg visions.it ... [31mTrying testmus/uade/st. petersburg visions.it ... playback FAILED[0m
+Trying testmus/uade/strulen gok-88.dm2 ... playback OK
+Trying testmus/uade/subway.mk2 ... playback OK
+Trying testmus/uade/summertime.aon ... playback OK
+Trying testmus/uade/surf ninjas.scn ... playback OK
+Trying testmus/uade/suspected.ahx ... playback OK
+Trying testmus/uade/sweet dreams.dm ... playback OK
+[90mIgnored testmus/uade/SWINGBT.SM1[0m
+Trying testmus/uade/syndicate.mg ... playback OK
+Trying testmus/uade/tarkus team.sid ... playback OK
+Trying testmus/uade/tearaway thomas jingles.dh ... playback OK
+Trying testmus/uade/test module.psa ... playback OK
+Trying testmus/uade/the cycles.kh ... [31mTrying testmus/uade/the cycles.kh ... playback NO SOUND[0m
+Trying testmus/uade/theknomes.mod ... playback OK
+Trying testmus/uade/the_drainer.mod3 ... playback OK
+[33mSkipping testmus/uade/this is 4 u.stp[0m
+Trying testmus/uade/thm.blueangel69 ... [31mTrying testmus/uade/thm.blueangel69 ... playback FAILED[0m
+Trying testmus/uade/thm.nightdawn ... [31mTrying testmus/uade/thm.nightdawn ... playback FAILED[0m
+Trying testmus/uade/toki-5.puma ... playback OK
+Trying testmus/uade/tpu.timelock ingame ... [31mTrying testmus/uade/tpu.timelock ingame ... playback NO SOUND[0m
+Trying testmus/uade/trainer.jam ... playback OK
+Trying testmus/uade/tribal dance.mm4 ... playback OK
+Trying testmus/uade/trip to holland.synmod ... playback OK
+Trying testmus/uade/TristarComicBakery.jam ... playback OK
+Trying testmus/uade/trolls-remix.ahx ... playback OK
+Trying testmus/uade/trs utils.sid ... playback OK
+Trying testmus/uade/turrican2.mdat ... playback OK
+[90mIgnored testmus/uade/turrican2.smpl[0m
+Trying testmus/uade/Two.sid ... [31mTrying testmus/uade/Two.sid ... playback NO SOUND[0m
+Trying testmus/uade/uds.desert run ste ... [31mTrying testmus/uade/uds.desert run ste ... playback FAILED[0m
+Trying testmus/uade/uds.obsession loader ste ... [31mTrying testmus/uade/uds.obsession loader ste ... playback FAILED[0m
+Trying testmus/uade/uds.obsession menu ... [31mTrying testmus/uade/uds.obsession menu ... playback FAILED[0m
+Trying testmus/uade/utopia-dizy killer-.mod ... playback OK
+Trying testmus/uade/vhs-binge.ahx ... playback OK
+Trying testmus/uade/videokid - ingame.scr ... playback OK
+Trying testmus/uade/virtual-reality.mod ... playback OK
+Trying testmus/uade/viruskiller v2.0 pro.cus ... playback OK
+Trying testmus/uade/war hawk.st1.3.mod ... playback OK
+Trying testmus/uade/whittakerrhapsody.emod ... playback OK
+Trying testmus/uade/wicked.wb ... playback OK
+Trying testmus/uade/wiseguys.mug ... playback OK
+Trying testmus/uade/xann.ahx ... playback OK
+Trying testmus/uade/zaktitle.scumm ... playback OK
+Trying testmus/uade/zarathrusta title.pvp ... playback OK
+Trying testmus/uade/zaxxon.dm2 ... playback OK
+UADE completed in 3.50197s
+UADE claims TFMX-family prefixes completed in 2.5e-05s
+secondary files resolve for multi-file fixtures completed in 0.001935s
+---- PxTone Collage Player ----
+Trying testmus/ptcop/16telepathy.ptcop ... playback OK
+Trying testmus/ptcop/Labyrinth Fight.ptcop ... playback OK
+Trying testmus/ptcop/sample-drums.ptcop ... playback OK
+Trying testmus/ptcop/sample.ptcop ... playback OK
+Trying testmus/ptcop/test.ptcop ... playback OK
+Trying testmus/ptcop/wav-ogg.ptcop ... playback OK
+PxTone completed in 0.044815s
+---- PxTone Collage Player ----
+Trying testmus/pttune/core.pttune ... playback OK
+Trying testmus/pttune/credits.pttune ... playback OK
+Trying testmus/pttune/factory.pttune ... playback OK
+Trying testmus/pttune/jungle.pttune ... playback OK
+Trying testmus/pttune/lava.pttune ... playback OK
+Trying testmus/pttune/surface.pttune ... playback OK
+PxTune completed in 0.018133s
+---- ProTrekkr ----
+Trying testmus/ptk/303test.ptk ... playback OK
+Trying testmus/ptk/Chemistry.ptk ... playback OK
+Trying testmus/ptk/goa.ptk ... playback OK
+PTK completed in 0.347299s
+---- ProTrekkr ----
+Trying testmus/ntk/d.m.turner remix.ntk ... playback OK
+NTK completed in 0.048788s
+---- Organya Player ----
+Trying testmus/org/access.org ... playback OK
+Trying testmus/org/gestation.org ... playback OK
+Trying testmus/org/safety.org ... playback OK
+Org completed in 0.005209s
+---- SoundSmith ----
+Trying testmus/soundsmith/FTA.Song (IAN9 remake) ... playback OK
+[90mIgnored testmus/soundsmith/FTA.Song (IAN9 remake).W[0m
+Trying testmus/soundsmith/Soundsmith Intro ... playback OK
+[90mIgnored testmus/soundsmith/Soundsmith Intro.W[0m
+SoundSmith completed in 0.001673s
+---- Archimedes Tracker ----
+Trying testmus/musx/4 by 8 bit.musx ... playback OK
+Trying testmus/musx/8trk tune.musx ... playback OK
+Trying testmus/musx/bug music.musx ... playback OK
+Trying testmus/musx/new reality.musx ... playback OK
+Trying testmus/musx/paradox 1.1 8 tracks the works.musx ... playback OK
+Musx completed in 0.003066s
+---- Coconizer ----
+Trying testmus/coco/Beethoven1.coco ... playback OK
+Trying testmus/coco/French Anthem.coco ... playback OK
+Trying testmus/coco/NRGCOM.coco ... playback OK
+Trying testmus/coco/Walking in the Air.coco ... playback OK
+Coconizer completed in 0.003022s
+---- MaxTrax ----
+Trying testmus/maxtrax/a-train (goodinfo).mxtx ... playback OK
+Trying testmus/maxtrax/a-train (intro).mxtx ... playback OK
+Trying testmus/maxtrax/a-train (spring).mxtx ... playback OK
+Trying testmus/maxtrax/darkseed_00.mxtx ... playback OK
+Trying testmus/maxtrax/darkseed_03.mxtx ... playback OK
+Trying testmus/maxtrax/darkseed_10.mxtx ... playback OK
+Trying testmus/maxtrax/kyrandia finalescr.mxtx ... playback OK
+Trying testmus/maxtrax/kyrandia introinst.mxtx ... playback OK
+Trying testmus/maxtrax/kyrandia introscr.mxtx ... playback OK
+Trying testmus/maxtrax/might_and_magic_eerie.mxtx ... playback OK
+MaxTrax completed in 0.011116s
+---- STarKos ----
+Trying testmus/sks/Glafouk - Sontagbeat.aks ... playback OK
+Trying testmus/sks/Targhan - Demo.aks ... playback OK
+Trying testmus/sks/Targhan - Orion Prime - Introduction.sks ... playback OK
+Trying testmus/sks/Tom&Jerry - From Scratch - Part 4.sks ... playback OK
+Trying testmus/sks/TwistWithHeader.sks ... playback OK
+Trying testmus/sks/UltraSyd - Morons.sks ... playback OK
+STarKos completed in 0.353566s
+---- NerdTracker2 ----
+Trying testmus/ned/barabanu.ned ... 
