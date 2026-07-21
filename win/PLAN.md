@@ -799,3 +799,33 @@ not just LHA — extracted ZIP members and cache-file routing benefit too.
 
 **Note:** shared code — re-run `cmtest` on macOS/Linux to confirm no baseline
 shift (expected clean: `/`-paths behave identically).
+
+## 26. Pouet/YouTube — Lua yt-dlp command was POSIX-shell-only
+
+Symptom: Pouet entries (YouTube-backed, played via the youtube plugin) fail.
+Log: the yt-dlp resolve command "returns" `The system cannot find the path
+specified.`, which is then handed to ffmpeg as the stream URL.
+
+Root cause: `lua/init.lua`'s `on_parse_youtube` built a shell command with two
+POSIX-isms that break under `cmd.exe` (cm_execute runs `cmd.exe /c` on Windows,
+`/bin/sh -c` elsewhere):
+1. `2>/dev/null` — cmd.exe reads this as redirect-stderr-to-file `\dev\null`;
+   the `\dev` dir doesn't exist, so cmd aborts the command *before yt-dlp runs*
+   and prints "The system cannot find the path specified." That text is captured
+   as the command's stdout → becomes the bogus "URL" ffmpeg then tries to open.
+2. **Single-quoted** args (`'youtube:...'`, `'140/bestaudio'`, `'<url>'`) —
+   cmd.exe does not treat `'...'` as quoting, so the literal quotes pass through
+   to yt-dlp and corrupt `--extractor-args`, `-f`, and the URL. (Even fixing the
+   redirect alone would still fail here.)
+
+**Fix:**
+- `main.cpp`: expose a Lua global `CM_DEVNULL` = `"NUL"` on Windows, `"/dev/null"`
+  elsewhere (the null device for `2>` redirects).
+- `init.lua`: double-quote every argument (both shells honour `"..."` for these
+  quote-free values; only cmd.exe rejects `'...'`) and end with `2> .. CM_DEVNULL`.
+
+stderr is merged into the capture pipe on both platforms (ExecPipe sets the
+child's stderr to the stdout pipe), so the redirect genuinely matters — without
+it yt-dlp warnings would pollute the resolved URL. yt-dlp itself resolves via the
+bundled onedir on `bin/ytdlp` (PATH prepend in main.cpp), so availability was not
+the issue — only the shell syntax.

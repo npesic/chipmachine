@@ -320,6 +320,17 @@ int main(int argc, char* argv[])
                           return utils::execPipe(cmd);
                       });
 
+    // Null device for "2>..." stderr redirects in Lua-built shell commands.
+    // cm_execute runs through cmd.exe on Windows and /bin/sh elsewhere, so the
+    // POSIX "/dev/null" is wrong on Windows -- cmd.exe reads it as a path under a
+    // nonexistent "\dev" dir and aborts the whole command with "The system
+    // cannot find the path specified.", which then gets captured as the command's
+    // output. Expose the platform-correct name so init.lua stays cross-platform.
+#ifdef _WIN32
+    (*lua)["CM_DEVNULL"] = "NUL";
+#else
+    (*lua)["CM_DEVNULL"] = "/dev/null";
+#endif
 
     lua->script_file((work_dir / "lua" / "init.lua").string());
     initYoutube(*lua);
