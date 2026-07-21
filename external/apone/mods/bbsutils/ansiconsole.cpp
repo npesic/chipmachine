@@ -449,8 +449,11 @@ int AnsiConsole::impl_handlekey() {
 		LOGD("Normal key %d", (int)c);
 		if(c == 13 || c == 10) {
 			if(c == 13) {
-				auto c2 = inBuffer.front();
-				if(c2 == 10) {
+				// Consume a trailing LF (CRLF) if one is queued. Must check the
+				// buffer is non-empty first: on Windows the console delivers a
+				// bare CR for Enter (no LF), so front() here would be an
+				// out-of-bounds read on an empty queue.
+				if(!inBuffer.empty() && inBuffer.front() == 10) {
 					inBuffer.pop();
 				}
 			}
@@ -462,7 +465,11 @@ int AnsiConsole::impl_handlekey() {
 		return c;
 	} else {
 
-		if(inBuffer.size() > 0) {
+		// A CSI/SS3 escape is at least ESC + 2 bytes (e.g. ESC '[' 'A'). This
+		// pops two, so require two present -- size() > 0 admitted a lone ESC
+		// followed by the buffer, then read the second element out of bounds. A
+		// bare ESC (nothing queued after it) falls through to `return c` below.
+		if(inBuffer.size() >= 2) {
 			auto c2 = inBuffer.front();
 			inBuffer.pop();
 			auto c3 = inBuffer.front();
@@ -517,10 +524,12 @@ int AnsiConsole::impl_handlekey() {
 				case 0x42:
 					return KEY_DOWN;
 				case 0x35:
-					inBuffer.pop();
+					// ESC [ 5 ~  -- consume the '~' terminator if present.
+					if(!inBuffer.empty()) inBuffer.pop();
 					return KEY_PAGEUP;
 				case 0x36:
-					inBuffer.pop();
+					// ESC [ 6 ~
+					if(!inBuffer.empty()) inBuffer.pop();
 					return KEY_PAGEDOWN;
 					
 				}
