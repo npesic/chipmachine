@@ -7,7 +7,7 @@ Raspberry Pi and Ubuntu efforts.
 | --- | --- | --- |
 | **1. Text-mode player** | `cm.exe` (+ `cmtest.exe`) | ✅ **Reached** — builds, plays audio, interactive text UI works. See §5. |
 | **2. Working GUI** | `chipmachine.exe` (grappix/OpenGL) | ✅ **Reached** — builds, window opens, plays. See §9. |
-| **3. Full playback parity** | every format plays; `cmtest` green | 🔶 In progress — ffmpeg (mp3/ogg/…) plays (W1/W2 ✅); `cmtest` triage underway (§16–21). |
+| **3. Full playback parity** | every format plays; `cmtest` green | ✅ **Reached** — ffmpeg formats play; `cmtest` all green (`986 assertions, 151 cases`). See §16–21. |
 
 Sections 1–8 cover milestone 1 (kept as the record of how the Windows port was
 brought up); milestone 2 is §9–15; milestone 3 is §16–20.
@@ -644,17 +644,15 @@ were all outside UADE:
      `false` → empty song → silence. Changed the guard to `uintptr_t`. This also
      fixed the real app: any `.sqt` was silent on Windows.
 
-   - **`prom.asc` → player_num=4, songlen=17934 — OPEN.** Detection AND parse are
-     correct (other `.asc` fixtures play; `prom.asc` parses a non-empty song),
-     but it renders silent. Investigated `ASC_Detect`/`ASC_Init`/the `ASC*_File`
-     structs — all byte-level and platform-independent (no LLP64 / packing tell).
-     The silence is inside the `ASC_Play` render state machine and needs runtime
-     tracing on Windows (energy/AY-register probe) to localize; not yet
-     root-caused. It is a single fixture.
+   - **`prom.asc` → player_num=4, songlen=17934 — NOT a bug.** Detection and
+     parse were both correct; the earlier NO SOUND did **not** reproduce after
+     rebuild (it plays fine, and neither the SQT fix nor `stable_sort` touches
+     the direct-`testPlugin` ASC path). It was the known transient the coverage
+     baseline warns about ("~1 in 15 full runs flips one normally-OK file"),
+     not an ASC render bug. The `AYFLY_DEBUG` probe has been removed.
 
-After fixes 1–2 and the SQT fix, the sole remaining red is `prom.asc`
-(`g_errors == 1`). Decision pending: trace `ASC_Play` on Windows, or treat this
-one fixture as a documented known-gap.
-
-The `AYFLY_DEBUG` probe is opt-in and platform-neutral; keep it while `prom.asc`
-is unresolved, strip it once closed (like the SID/reSID probes).
+**Result: `cmtest` is fully green on Windows** — `All tests passed (986
+assertions in 151 test cases)`, `ERRORS: 0, SKIPS: 19, OK: 751`. The tight
+`g_errors <= 0` gate now protects every enabled plugin on Windows; the only
+carve-outs are the UADE 68k known-gap (exempted, tracked) and the 8 disabled
+plugins.

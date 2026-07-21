@@ -4,8 +4,6 @@
 
 #include "ayfly.h"
 
-#include <cstdio>
-#include <cstdlib>
 #include <fstream>
 #include <set>
 
@@ -18,23 +16,6 @@ public:
     {
         aysong = ay_initsong(fileName.c_str(), 44100);
         if (aysong == nullptr) { throw player_exception("Not an AY file"); }
-
-        // Opt-in diagnostic (run with AYFLY_DEBUG=1): report which format
-        // decoder ay_sys_detect() chose, plus the parsed song length. Two ZX
-        // fixtures render silent on Windows -- prom.asc (should be player_num 4
-        // = .asc) and jaanmus.sqt (should be 10 = .sqt). A wrong player_num
-        // means content-detection false-positived on an earlier decoder; a
-        // right number with length 0 means the decoder parsed an empty song.
-        // See win/PLAN.md §21. Table: 0=.ay 1=.vtx 2=.ym 3=.psg 4=.asc 5=.pt2
-        // 6=.pt3 7=.stc 8=.stp 9=.psc 10=.sqt 11=.pt1 12=.fxm 13=.amad.
-        if (std::getenv("AYFLY_DEBUG") != nullptr) {
-            auto* info = static_cast<AYSongInfo*>(aysong);
-            fprintf(stderr, "[ayfly] %s -> player_num=%ld songlen=%lu\n",
-                    fileName.c_str(), (long)info->player_num,
-                    (unsigned long)ay_getsonglength(aysong));
-            fflush(stderr);
-        }
-
         const auto* songName = ay_getsongname(aysong);
         const auto* songAuthor = ay_getsongauthor(aysong);
         unsigned long len = ay_getsonglength(aysong) / 50;
