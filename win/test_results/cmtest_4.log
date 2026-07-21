@@ -1,0 +1,97 @@
+Trying testmus/uade/7demosng1.mug ... [uade-load] req 'Env:EaglePlayer/EP-Mugician_II.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Mugician_II.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Mugician_II.cfg' -> '/Configs/EP-Mugician_II.cfg' = MISSING (null)
+Trying testmus/uade/ACE II.smus ... [uade-load] req 'Instruments/deeptrumpet1.instr' -> 'Instruments/deeptrumpet1.instr' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+Trying testmus/uade/action fighter.core ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\action fighter.core' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\action fighter.core' = 68052 bytes
+Trying testmus/uade/amberstar-extro.hip7 ... [uade-load] req 'Env:EaglePlayer/EP-Hippel_7V.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Hippel_7V.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Hippel_7V.cfg' -> '/Configs/EP-Hippel_7V.cfg' = MISSING (null)
+Trying testmus/uade/amsyntdemo.adsc ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\amsyntdemo.adsc.AS' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\amsyntdemo.adsc.AS' = 4104 bytes
+Trying testmus/uade/aquatic games.sng ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\aquatic games.INS' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\aquatic games.INS' = 29166 bytes
+Trying testmus/uade/australian pioneers intro.hip7 ... [uade-load] req 'Env:EaglePlayer/EP-Hippel_7V.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Hippel_7V.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Hippel_7V.cfg' -> '/Configs/EP-Hippel_7V.cfg' = MISSING (null)
+Trying testmus/uade/best of guitars.sdata ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.i' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.i' = MISSING (null)
+[uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.ip' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.ip' = 113935 bytes
+[uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.i' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.i' = MISSING (null)
+[uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.ip' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\best of guitars.ip' = 113935 bytes
+Trying testmus/uade/blacklamp.gray ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\blacklamp.gray' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\blacklamp.gray' = 5356 bytes
+Trying testmus/uade/blazing thunder.hd ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\blazing thunder.hd' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\blazing thunder.hd' = 92244 bytes
+Trying testmus/uade/bombfusion.riff ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\bombfusion.riff' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\bombfusion.riff' = 45016 bytes
+Trying testmus/uade/boulderdash.spl ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\boulderdash.spl' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\boulderdash.spl' = 71584 bytes
+Trying testmus/uade/californiagames2.dl ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\californiagames2.dl' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\californiagames2.dl' = 71184 bytes
+Trying testmus/uade/cannon fodder (intro).sng ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\cannon fodder (intro).INS' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\cannon fodder (intro).INS' = 228454 bytes
+Trying testmus/uade/centerbase act01.osp ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\centerbase act01.os' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\centerbase act01.osp' = 3096 bytes
+Trying testmus/uade/chubbygristle.bds ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\chubbygristle.bds' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\chubbygristle.bds' = 18472 bytes
+Trying testmus/uade/cp.ml ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\cp.ml' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\cp.ml' = 27142 bytes
+Trying testmus/uade/cust.my one ... [uade-load] req 'instr/' -> 'instr/' = MISSING (null)
+Trying testmus/uade/cust.snake pliscin ... [uade-load] req 'instr/' -> 'instr/' = MISSING (null)
+Trying testmus/uade/cybernoid 2.ml ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\cybernoid 2.ml' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\cybernoid 2.ml' = 38854 bytes
+Trying testmus/uade/daisy.adsc ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\daisy.adsc.AS' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\daisy.adsc.AS' = 8336 bytes
+Trying testmus/uade/defjam intro.fp ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\defjam intro.fp' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\defjam intro.fp' = 18128 bytes
+Trying testmus/uade/ghostbattle gameover.hip7 ... [uade-load] req 'Env:EaglePlayer/EP-Hippel_7V.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Hippel_7V.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Hippel_7V.cfg' -> '/Configs/EP-Hippel_7V.cfg' = MISSING (null)
+Trying testmus/uade/ivanhoe - bonus.pap ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\ivanhoe - bonus.pa' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\ivanhoe - bonus.pap' = 1998 bytes
+Trying testmus/uade/jamespond2aga-title.sng ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\jamespond2aga-title.INS' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\jamespond2aga-title.INS' = MISSING (null)
+[uade-load] req 'SMP.set' -> 'SMP.set' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+Trying testmus/uade/lethalweapon.doda ... [uade-load] req 'Env:EaglePlayer/EP-Special_FX_ST.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Special_FX_ST.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Special_FX_ST.cfg' -> '/Configs/EP-Special_FX_ST.cfg' = MISSING (null)
+Trying testmus/uade/letsdance.bss ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\letsdance.bss' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\letsdance.bss' = 91728 bytes
+Trying testmus/uade/mdat.abandonedplaces-part2.1 ... [uade-load] req 'smpl.C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.abandonedplaces-part2.1' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.abandonedplaces-part2.smpl' = MISSING (null)
+[uade-load] req 'SMPL.set' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\set.smpl' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+Trying testmus/uade/mdat.avalon2-ongame ... [uade-load] req 'Env:EaglePlayer/EP-TFMX_Pro.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'Configs/EP-TFMX_Pro.cfg' -> 'Configs/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'smpl.C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.avalon2-ongame' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.smpl' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+Trying testmus/uade/mdat.hexuma-ice ... [uade-load] req 'Env:EaglePlayer/EP-TFMX_Pro.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'Configs/EP-TFMX_Pro.cfg' -> 'Configs/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'smpl.C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.hexuma-ice' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.smpl' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+Trying testmus/uade/mdat.karamalz-titel ... [uade-load] req 'Env:EaglePlayer/EP-TFMX_Pro.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'Configs/EP-TFMX_Pro.cfg' -> 'Configs/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'smpl.C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.karamalz-titel' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.smpl' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+[31mTrying testmus/uade/mdat.karamalz-titel ... playback FAILED[0m
+Trying testmus/uade/mdat.kraft ... [uade-load] req 'Env:EaglePlayer/EP-TFMX_Pro.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'Configs/EP-TFMX_Pro.cfg' -> 'Configs/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'smpl.C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.kraft' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.smpl' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+[31mTrying testmus/uade/mdat.kraft ... playback FAILED[0m
+Trying testmus/uade/mdat.melovatrix ... [uade-load] req 'Env:EaglePlayer/EP-TFMX_Pro.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'Configs/EP-TFMX_Pro.cfg' -> 'Configs/EP-TFMX_Pro.cfg' = MISSING (null)
+[uade-load] req 'smpl.C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.melovatrix' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\mdat.smpl' = MISSING (null)
+uade warning: Song ended prematurely due to error: score died
+Trying testmus/uade/navyseals.doda ... [uade-load] req 'Env:EaglePlayer/EP-Special_FX_ST.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Special_FX_ST.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Special_FX_ST.cfg' -> '/Configs/EP-Special_FX_ST.cfg' = MISSING (null)
+Trying testmus/uade/nopushing.work4.ahx ... [uade-load] req 'ENV:EaglePlayer/ahx' -> 'ENV:EaglePlayer/ahx' = 26 bytes
+[uade-load] req 'ENV:EaglePlayer/ahx.waves' -> 'ENV:EaglePlayer/ahx.waves' = 410760 bytes
+Trying testmus/uade/pushover aztec.doda ... [uade-load] req 'Env:EaglePlayer/EP-Special_FX_ST.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Special_FX_ST.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Special_FX_ST.cfg' -> '/Configs/EP-Special_FX_ST.cfg' = MISSING (null)
+Trying testmus/uade/pushover greek.doda ... [uade-load] req 'Env:EaglePlayer/EP-Special_FX_ST.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Special_FX_ST.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Special_FX_ST.cfg' -> '/Configs/EP-Special_FX_ST.cfg' = MISSING (null)
+Trying testmus/uade/sir fred - 01.dum ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\sir fred - 01.ins' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\sir fred - 01.ins' = 49858 bytes
+Trying testmus/uade/sir fred-niv0.dum ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\sir fred-niv0.ins' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\sir fred-niv0.ins' = 49470 bytes
+Trying testmus/uade/snickle.mug ... [uade-load] req 'Env:EaglePlayer/EP-Mugician_II.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Mugician_II.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Mugician_II.cfg' -> '/Configs/EP-Mugician_II.cfg' = MISSING (null)
+Trying testmus/uade/spacestation.jmf ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\spacestation.jmf' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\spacestation.jmf' = 3816 bytes
+Trying testmus/uade/suspected.ahx ... [uade-load] req 'ENV:EaglePlayer/ahx' -> 'ENV:EaglePlayer/ahx' = 26 bytes
+[uade-load] req 'ENV:EaglePlayer/ahx.waves' -> 'ENV:EaglePlayer/ahx.waves' = 410760 bytes
+Trying testmus/uade/the cycles.kh ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\the cycles.kh' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\the cycles.kh' = 32100 bytes
+[uade-load] req 'songplay' -> 'songplay' = MISSING (null)
+[31mTrying testmus/uade/the cycles.kh ... playback NO SOUND[0m
+Trying testmus/uade/tpu.timelock ingame ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\tpu.timelock ingam' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\tpu.timelock ingame' = 23300 bytes
+Trying testmus/uade/trolls-remix.ahx ... [uade-load] req 'ENV:EaglePlayer/ahx' -> 'ENV:EaglePlayer/ahx' = 26 bytes
+[uade-load] req 'ENV:EaglePlayer/ahx.waves' -> 'ENV:EaglePlayer/ahx.waves' = 410760 bytes
+Trying testmus/uade/turrican2.mdat ... [uade-load] req 'Env:EaglePlayer/EP-TFMX_7V.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-TFMX_7V.cfg' = MISSING (null)
+[uade-load] req 'Configs/EP-TFMX_7V.cfg' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\turrican2.EP-TFMX_7V' = MISSING (null)
+[uade-load] req 'smpl.C:\msys64\tmp\mdat.music' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\turrican2.smpl' = 81126 bytes
+Trying testmus/uade/Two.sid ... Illegal instruction: 4afc at 00001306
+[31mTrying testmus/uade/Two.sid ... playback NO SOUND[0m
+Trying testmus/uade/vhs-binge.ahx ... [uade-load] req 'ENV:EaglePlayer/ahx' -> 'ENV:EaglePlayer/ahx' = 26 bytes
+[uade-load] req 'ENV:EaglePlayer/ahx.waves' -> 'ENV:EaglePlayer/ahx.waves' = 410760 bytes
+Trying testmus/uade/war hawk.st1.3.mod ... [uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\war hawk.st1.3.mod.AS' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\war hawk.st1.3.mod.AS' = MISSING (null)
+[uade-load] req 'C:\msys64\home\lab\git\chipmachine\testmus\uade\war hawk.st1.3.mod.NT' -> 'C:\msys64\home\lab\git\chipmachine\testmus\uade\war hawk.st1.3.mod.NT' = 8336 bytes
+Trying testmus/uade/wiseguys.mug ... [uade-load] req 'Env:EaglePlayer/EP-Mugician_II.cfg' -> '\msys64\home\lab\git\chipmachine\data\uade/players/ENV\EaglePlayer/EP-Mugician_II.cfg' = MISSING (null)
+[uade-load] req '/Configs/EP-Mugician_II.cfg' -> '/Configs/EP-Mugician_II.cfg' = MISSING (null)
+Trying testmus/uade/xann.ahx ... [uade-load] req 'ENV:EaglePlayer/ahx' -> 'ENV:EaglePlayer/ahx' = 26 bytes
+[uade-load] req 'ENV:EaglePlayer/ahx.waves' -> 'ENV:EaglePlayer/ahx.waves' = 410760 bytes
