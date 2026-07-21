@@ -10,8 +10,6 @@
 #include <uade/uade.h>
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <set>
@@ -164,23 +162,6 @@ public:
             }
         }
 
-        // Opt-in diagnostic (UADE_DEBUG=1): the emulated eagleplayer asks the
-        // host to load its companion files (samples, instruments) through here.
-        // For the ~30 "score died" fixtures on Windows we need to see what each
-        // player requested and whether it resolved -- a null or wrong-size load
-        // is the likely trigger. Prints: requested name -> resolved path =
-        // loaded size (or MISSING).
-        if (std::getenv("UADE_DEBUG") != nullptr) {
-            if (f) {
-                fprintf(stderr, "[uade-load] req '%s' -> '%s' = %llu bytes\n",
-                        name, fileName.string().c_str(),
-                        (unsigned long long)f->size);
-            } else {
-                fprintf(stderr, "[uade-load] req '%s' -> '%s' = MISSING (null)\n",
-                        name, fileName.string().c_str());
-            }
-            fflush(stderr);
-        }
         return f;
     }
 

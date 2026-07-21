@@ -678,9 +678,20 @@ it passed there.
 **Fix:** pass `currentFileName.generic_string()` (forward slashes on every
 platform; Win32 file APIs accept `/`) to `uade_play`, making Windows path
 handling identical to macOS/Linux for every companion-loading UADE format.
-Expected to clear most of the 30 (the `mdat.*` TFMX pairs, the `dns.`/`ash.`/
-`uds.`/`thm.`/... prefix formats, and `.sng`→`.INS`). Any residue that is *not*
-companion-based (e.g. `Two.sid`'s `Illegal instruction 0x4AFC`) is triaged
-separately. The `UADE_DEBUG` probe stays until the remaining count is confirmed,
-then is stripped like the SID/ayfly probes. Once the count reaches 0, the
-`testUadePlugin` wrapper reports a gap of 0 and the exemption becomes a no-op.
+**Result: all 30 UADE fixtures now play (30 → 0).** The `generic_string` change
+cleared 29 in one shot. The last one, `centerbase act01.osp` (SynthPack), was
+collateral from the same change: the `amigaloader` fallback that maps a player's
+truncated request back to the module compared `currentFileName.string()` (native
+backslashes) against the now-forward-slash request, so it stopped matching.
+**Second fix:** compare with `generic_string()` on both sides in that fallback
+(`UADEPlugin.cpp`). With that, `.osp` resolves again and plays.
+
+Cleanup done: the `UADE_DEBUG` probe removed; the `testUadePlugin` exemption
+wrapper removed and both UADE call sites reverted to plain `testPlugin`; the
+`UADE SMUS plays sound` Windows-skip removed (ACE II.smus plays now). The
+coverage gate `REQUIRE(g_errors <= 0)` is now **fully tight on Windows with no
+UADE carve-out** — every enabled plugin, UADE included, must play.
+
+> Both UADE fixes are **path-handling only** and correct on every platform, but
+> they touch shared code, so re-run `cmtest` on macOS/Linux to confirm no
+> baseline shift there.
