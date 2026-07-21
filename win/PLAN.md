@@ -740,3 +740,34 @@ console gamerips, every scene.org compo entry — which were all silently failin
   inlined) but harmless; can be dropped as cleanup.
 - **Broader:** re-run the symbol-collision scan *including core libs* (not just
   plugin-vs-plugin) — miniz was one missed collision; there may be others.
+
+## 24. Streaming mp3/ogg teardown freeze — CloseHandle doesn't unblock WriteFile
+
+Symptom: a streamed mp3 (Demozoo/scene.org, `ffmpeg -i pipe:0` progressive
+path) **plays fine, then the whole app goes unresponsive** — on switching to
+the next track or skipping mid-song. The download completes (`CODE 200`) and the
+song is audibly correct, so the decode path is fine; the hang is in **teardown**.
+
+Root cause: the streaming `FFMPEGPlayer` runs a **feeder thread** that pumps the
+download fifo into ffmpeg's stdin with a *synchronous* `WriteFile`. Under normal
+backpressure that write is routinely parked (ffmpeg stops reading stdin whenever
+its stdout pipe fills). `~FFMPEGPlayer` tears down by `closeWrite()` →
+`feeder.join()` → `Kill()`, relying on POSIX semantics where closing the write
+fd makes the parked write fail with `EPIPE` so the feeder exits. **On Windows,
+`CloseHandle` does not abort another thread's pending `WriteFile`** — the feeder
+stays parked, `join()` hangs forever. Teardown runs on `playerThread` **while it
+holds `plMutex`**, so the render thread blocks on `plMutex` at its next
+`getInfo/getMeta` and the UI freezes. (`MusicPlayer::streamFile`'s
+`player = nullptr` is the exact destroy site.)
+
+**Fix (`coreutils/exec.h`, Win32 `ExecPipe::closeWrite`):** call
+`CancelIoEx(hPipeWrite, nullptr)` before `CloseHandle` — the documented Windows
+primitive for aborting a synchronous pipe I/O parked on another thread. The
+feeder's `WriteFile` returns `ERROR_OPERATION_ABORTED`, `write()` reports `<=0`,
+the feeder exits, `join()` returns. POSIX path unchanged (its `close()` already
+does this). Natural single-song end never hit this (the feeder drains and closes
+its own stdin before EOF); the freeze needed a teardown *while backpressured*
+(skip / auto-advance to another stream).
+
+**Impact:** fixes the "streamed song plays then app hangs" freeze for all
+progressive-stream formats (mp3/ogg/flac/wav/mp2/opus) on Windows.

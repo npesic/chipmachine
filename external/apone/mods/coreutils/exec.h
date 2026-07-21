@@ -239,7 +239,23 @@ inline void ExecPipe::setReadNonBlocking()
 
 inline void ExecPipe::closeWrite()
 {
-    if (hPipeWrite) { CloseHandle(hPipeWrite); hPipeWrite = nullptr; }
+    if (hPipeWrite) {
+        // A feeder thread may be parked in a *synchronous* WriteFile on this
+        // handle -- normal backpressure: ffmpeg's stdin buffer fills whenever we
+        // stop draining its stdout, so the write blocks until playback catches
+        // up. On POSIX, close() of the write fd makes that write fail with EPIPE
+        // so the feeder exits; the destructor relies on that to join() cleanly.
+        // On Windows, CloseHandle does NOT unblock another thread's pending
+        // WriteFile -- the feeder stays parked, ~FFMPEGPlayer's join() hangs
+        // forever, and because teardown runs on the player thread holding
+        // plMutex, the whole UI freezes. CancelIoEx aborts the pending I/O so the
+        // parked WriteFile returns (ERROR_OPERATION_ABORTED); write() reports that
+        // as <=0 and the feeder exits. Cancels I/O on this handle across all
+        // threads of the process (hOverlapped == nullptr).
+        CancelIoEx(hPipeWrite, nullptr);
+        CloseHandle(hPipeWrite);
+        hPipeWrite = nullptr;
+    }
 }
 
 inline bool ExecPipe::hasEnded()
