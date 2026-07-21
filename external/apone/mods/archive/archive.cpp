@@ -18,6 +18,15 @@ extern "C" {
 
 using namespace std;
 
+// DIAG: defined in miniz.c (compiled as the separate C `miniz` library; this TU
+// includes miniz.c HEADER-ONLY via MINIZ_HEADER_FILE_ONLY, so these are a
+// cross-TU C-linkage symbol). Set by mz_zip_reader_init_file to report which
+// step failed. Temporary -- remove with the LOGW probe once the ZIP bug is fixed.
+extern "C" {
+    extern int g_mz_init_fail_step;
+    extern long long g_mz_init_file_size;
+}
+
 namespace utils {
 
 // ZIP central-directory filenames are stored either as UTF-8 (general-purpose
