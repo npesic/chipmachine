@@ -946,11 +946,22 @@ void MusicPlayerList::playCurrent()
                 // would pick a member it is then guaranteed to fail on.
                 auto const& songExt = archiveExtensions().first;
                 auto const& audioExt = archiveExtensions().second;
-                std::string dir = f0.getName() + "_x";
+                // Normalize to forward slashes before handing paths to miniz.
+                // On Windows utils::path renders the (Win-format) cache dir with
+                // backslashes but File::operator/ joins with '/', producing a
+                // MIXED path like "C:\..\_webfiles/https../x.zip". Plain fopen
+                // (the ZIP magic-check above) tolerates that, but miniz's Windows
+                // file open (fopen_s) fails on it -> mz_zip_reader_init_file
+                // returns false -> "Could not open zip file" and nothing extracts.
+                // Win32 file APIs accept '/' throughout, so a uniform forward-
+                // slash path works for the archive open AND the members it writes.
+                std::string zipPath = f0.getName();
+                std::replace(zipPath.begin(), zipPath.end(), '\\', '/');
+                std::string dir = zipPath + "_x";
                 utils::makedirs(dir);
                 std::vector<std::string> songs, audio;
                 try {
-                    auto* a = utils::Archive::open(f0.getName(), dir);
+                    auto* a = utils::Archive::open(zipPath, dir);
                     // open() returns null for an unrecognised container. We got
                     // here by ZIP magic, so it should be a ZipFile -- but never
                     // dereference null (a SIGSEGV here is NOT caught by catch).
