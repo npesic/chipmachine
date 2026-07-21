@@ -110,8 +110,15 @@ public:
                        (player->baseName + "." +
                         utils::path_prefix(fileName.string()));
             LOGD("Translated back to '%s'", fileName.string().c_str());
-        } else if (player->currentFileName.string().find(fileName.string()) ==
-                   0) {
+        } else if (player->currentFileName.generic_string().find(
+                       fileName.generic_string()) == 0) {
+            // Compare with generic_string (forward slashes) on BOTH sides: since
+            // we now hand uade_play a forward-slash module name (see load()), the
+            // player derives companion requests with forward slashes too, while
+            // currentFileName.string() is native (backslashes on Windows). A
+            // native-vs-forward-slash compare here fails, so e.g. SynthPack's
+            // ".osp" request ("...act01.os", a prefix of the module) stopped
+            // resolving back to the module.
             LOGD("Restoring filename %s back to '%s'", fileName.string().c_str(),
                  player->currentFileName.string().c_str());
             fileName = player->currentFileName;
