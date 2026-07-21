@@ -1,0 +1,22 @@
+# AYFLY_DEBUG=1 builds/release/cmtest "Ayfly" 2>&1 | grep -E '\[ayfly\]|jaanmus|prom'
+Trying testmus/zx/16kintro1.pt3 ... [ayfly] testmus/zx/16kintro1.pt3 -> player_num=6 songlen=2880
+Trying testmus/zx/africa.stp2 ... [ayfly] testmus/zx/africa.stp2 -> player_num=8 songlen=6528
+Trying testmus/zx/airwolf.stc ... [ayfly] testmus/zx/airwolf.stc -> player_num=7 songlen=8352
+Trying testmus/zx/arcanoid.asc ... [ayfly] testmus/zx/arcanoid.asc -> player_num=4 songlen=4224
+Trying testmus/zx/beast.stp ... [ayfly] testmus/zx/beast.stp -> player_num=8 songlen=8448
+Trying testmus/zx/commando.amad ... [ayfly] testmus/zx/commando.amad -> player_num=13 songlen=11809
+Trying testmus/zx/elinka.pt1 ... [ayfly] testmus/zx/elinka.pt1 -> player_num=11 songlen=10752
+Trying testmus/zx/exploding atoms.amad ... [ayfly] testmus/zx/exploding atoms.amad -> player_num=13 songlen=3841
+Trying testmus/zx/falcon patrol ii.amad ... [ayfly] testmus/zx/falcon patrol ii.amad -> player_num=13 songlen=1751
+Trying testmus/zx/ft.dance.pt2 ... [ayfly] testmus/zx/ft.dance.pt2 -> player_num=5 songlen=7805
+Trying testmus/zx/jaanmus.sqt ... [ayfly] testmus/zx/jaanmus.sqt -> player_num=10 songlen=0
+Trying testmus/zx/jaanmus.sqt ... playback NO SOUND
+Trying testmus/zx/m40.st13 ... [ayfly] testmus/zx/m40.st13 -> player_num=7 songlen=1600
+Trying testmus/zx/napalm.psc ... [ayfly] testmus/zx/napalm.psc -> player_num=9 songlen=14848
+Trying testmus/zx/pr2.asc ... [ayfly] testmus/zx/pr2.asc -> player_num=4 songlen=2320
+Trying testmus/zx/prom.asc ... [ayfly] testmus/zx/prom.asc -> player_num=4 songlen=17934
+Trying testmus/zx/sadreams.pt2 ... [ayfly] testmus/zx/sadreams.pt2 -> player_num=5 songlen=9152
+Trying testmus/zx/star3.fxm ... [ayfly] testmus/zx/star3.fxm -> player_num=12 songlen=111
+Trying testmus/zx/stellar.vtx ... [ayfly] testmus/zx/stellar.vtx -> player_num=1 songlen=11328
+Trying testmus/zx/takeonme.zxs ... [ayfly] testmus/zx/takeonme.zxs -> player_num=7 songlen=3072
+Trying testmus/zx/the last v8.amad ... [ayfly] testmus/zx/the last v8.amad -> player_num=13 songlen=4033
