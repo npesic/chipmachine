@@ -117,9 +117,22 @@ class ExtArchive : public Archive {
 class ZipFile : public Archive {
 public:
 	ZipFile(const string &fileName, const string &workDir = ".") : workDir(workDir) {
+		// DIAG: probe the exact path miniz will use, via plain fopen, to compare
+		// against miniz's own open (which uses fopen_s on __MINGW64__).
+		{
+			FILE* tf = fopen(fileName.c_str(), "rb");
+			long tsz = -1;
+			if (tf) { fseek(tf, 0, SEEK_END); tsz = ftell(tf); fclose(tf); }
+			LOGW("ZipFile: fopen('%s') = %s size=%ld", fileName.c_str(),
+			     tf ? "OK" : "NULL", tsz);
+		}
 		//zipFile = zip_open(fileName.c_str(), 0, NULL);
 		memset(&zipArchive, 0, sizeof(zipArchive));
-		if(!mz_zip_reader_init_file(&zipArchive, fileName.c_str(), 0))
+		bool ok = mz_zip_reader_init_file(&zipArchive, fileName.c_str(), 0);
+		LOGW("ZipFile: mz_zip_reader_init_file('%s') = %d files=%u",
+		     fileName.c_str(), (int)ok,
+		     ok ? (unsigned)zipArchive.m_total_files : 0u);
+		if(!ok)
 			throw archive_exception("Could not open zip file");
 	}
 

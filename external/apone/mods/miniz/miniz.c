@@ -3323,20 +3323,16 @@ mz_bool mz_zip_reader_init_file(mz_zip_archive *pZip, const char *pFilename, mz_
 {
   mz_uint64 file_size;
   MZ_FILE *pFile = MZ_FOPEN(pFilename, "rb");
-  fprintf(stderr, "[miniz] MZ_FOPEN('%s') = %p\n", pFilename, (void*)pFile);
   if (!pFile)
     return MZ_FALSE;
   if (MZ_FSEEK64(pFile, 0, SEEK_END))
   {
-    fprintf(stderr, "[miniz] MZ_FSEEK64 to END failed\n");
     MZ_FCLOSE(pFile);
     return MZ_FALSE;
   }
   file_size = MZ_FTELL64(pFile);
-  fprintf(stderr, "[miniz] file_size = %llu\n", (unsigned long long)file_size);
   if (!mz_zip_reader_init_internal(pZip, flags))
   {
-    fprintf(stderr, "[miniz] init_internal failed\n");
     MZ_FCLOSE(pFile);
     return MZ_FALSE;
   }
@@ -3346,13 +3342,9 @@ mz_bool mz_zip_reader_init_file(mz_zip_archive *pZip, const char *pFilename, mz_
   pZip->m_archive_size = file_size;
   if (!mz_zip_reader_read_central_dir(pZip, flags))
   {
-    fprintf(stderr, "[miniz] read_central_dir failed (size=%llu)\n",
-            (unsigned long long)file_size);
     mz_zip_reader_end(pZip);
     return MZ_FALSE;
   }
-  fprintf(stderr, "[miniz] init_file OK, %u files\n",
-          (unsigned)pZip->m_total_files);
   return MZ_TRUE;
 }
 #endif // #ifndef MINIZ_NO_STDIO
