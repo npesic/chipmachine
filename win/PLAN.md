@@ -7,9 +7,10 @@ Raspberry Pi and Ubuntu efforts.
 | --- | --- | --- |
 | **1. Text-mode player** | `cm.exe` (+ `cmtest.exe`) | ✅ **Reached** — builds, plays audio, interactive text UI works. See §5. |
 | **2. Working GUI** | `chipmachine.exe` (grappix/OpenGL) | ✅ **Reached** — builds, window opens, plays. See §9. |
+| **3. Full playback parity** | every format plays; `cmtest` green | 📋 Planned — see §16–20. |
 
 Sections 1–8 cover milestone 1 (kept as the record of how the Windows port was
-brought up); milestone 2 starts at §9.
+brought up); milestone 2 is §9–15; milestone 3 is §16–20.
 
 ## TL;DR
 
@@ -424,3 +425,112 @@ visualiser; check window resize and DPI scaling.
 4. **Does the GUI need `TEXTMODE_ONLY` peers?** `src/textmode.cpp` is in *both*
    `MAIN_FILES` and `GUI_FILES`; confirm it compiles once and isn't duplicated
    into the `chipmachine` link.
+
+---
+
+# Milestone 3: Full playback parity (`ffmpeg` subprocess + green `cmtest`)
+
+Milestones 1–2 get `cm.exe` and `chipmachine.exe` building, browsing, and
+playing the *native* plugin formats (MOD, SID, NES, SNES, the trackers, …). This
+milestone closes the two remaining gaps: the **ffmpeg-backed formats** (mp3, ogg,
+and friends) that are silent today, and getting the **`cmtest` suite green** so we
+have a regression gate on Windows.
+
+## 16. Definition of done
+
+- `.mp3` and `.ogg` play on Windows — both as local files and, crucially, from
+  the DB/browser (the streaming path), which is how most catalogue songs load.
+- The rest of the ffmpeg set plays too: `aac m4a mp4 opus mp2 mpeg ac3 wav flac
+  aiff aif 8svx wma` (see `ffmpegExtensions()` in `FFMPEGPlugin.cpp:211`).
+- `cmtest.exe` runs to completion with **no failures** (excluding the tests for
+  the seven `WIN32_DISABLED_PLUGINS`, which are compiled out — see §5).
+
+## 17. Why mp3/ogg are silent today (root cause)
+
+It is **not** a codec problem — it's the subprocess pipe.
+
+- `.ogg` is claimed **only** by `ffmpegplugin`. `.mp3` is claimed by both
+  `mp3plugin` (real **mpg123**, works) *and* `ffmpegplugin`.
+- For a **local** file, dispatch picks the highest-priority `canHandle` plugin
+  (equal priority → registration order), so a local `.mp3` correctly uses
+  `mp3plugin`. But `.ogg` has no native plugin, so it always needs ffmpeg.
+- For a **streamed** song — which is how the browser plays catalogue entries —
+  `MusicPlayer::playFileStream` (`src/MusicPlayer.cpp:212`) **forces ffmpeg for
+  everything** ("Always stream through ffmpeg: it probes the container itself
+  and implements endStream()/EOF"). So even mp3 goes through ffmpeg here.
+- ffmpeg is driven as a **subprocess** via `utils::ExecPipe`
+  (`external/apone/mods/coreutils/exec.h`). The Windows implementation is a
+  **complete stub**: `read()` returns −1, `write()` returns 0, `hasEnded()`
+  returns true. So the pipe yields no audio and the stream ends immediately —
+  silence, no error.
+- And `bin/ffmpeg.exe` does not exist — the repo ships `bin/ffmpeg`, a Unix
+  binary. `FFMPEGPlugin` hardcodes `bin\\ffmpeg.exe` on Windows
+  (`FFMPEGPlugin.cpp:194`).
+
+So two things are missing: **(a) a real Win32 `ExecPipe`** and **(b) the Windows
+ffmpeg binary**.
+
+## 18. The work
+
+**W1 — Windows `bin/ffmpeg.exe`.** Drop a static Windows ffmpeg build into
+`bin/`. Prefer a static build (e.g. gyan.dev / BtbN) so it has no DLL
+dependencies of its own. This is a vendored-binary step, like the SunVox library
+question (§5) — decide whether it goes in git (large) or is fetched by a setup
+step. `build.py`/packaging should copy it next to the executable.
+
+**W2 — real `ExecPipe` for Win32** (`exec.h`, the `#ifdef _WIN32` block). The
+struct already declares `HANDLE hPipeRead/hPipeWrite` — implement the eight
+methods with the Win32 process/pipe API:
+- ctor: `CreatePipe` for the child's stdout (and stdin), set the parent ends
+  **not inheritable** (`SetHandleInformation`/`HANDLE_FLAG_INHERIT`), then
+  `CreateProcess` with `STARTUPINFO.hStd{Output,Input}` wired to the child ends
+  and `bInheritHandles = TRUE`. Close the child ends in the parent after spawn.
+- `read`/`write`: `ReadFile`/`WriteFile` on the pipe handles; map a closed pipe
+  (`ERROR_BROKEN_PIPE`) to EOF.
+- `setReadNonBlocking`: anonymous pipes can't be `PeekNamedPipe`-polled cleanly
+  in blocking mode — use `PeekNamedPipe` to check available bytes before
+  `ReadFile`, or create the read pipe with `PIPE_NOWAIT` / a named pipe with
+  `FILE_FLAG_OVERLAPPED`. The streaming player relies on `read()` returning −1
+  ("buffering") rather than blocking the audio thread.
+- `closeWrite`: `CloseHandle(hPipeWrite)` so the child sees stdin EOF.
+- `hasEnded`: `GetExitCodeProcess` != `STILL_ACTIVE` (keep the read end open to
+  drain remaining output first).
+- `Kill`: `TerminateProcess`. Move ctor/dtor: transfer/duplicate handles, close
+  on destroy. `operator std::string()`: run to completion, slurp stdout.
+
+**W3 — verify the streaming FIFO path end to end.** With W1+W2 done, confirm the
+feeder thread (`MusicPlayer::update` → `player->getSamples`) actually pulls PCM
+through the pipe and the silence-detector/`endStream` terminates cleanly at EOF.
+
+## 19. Getting `cmtest` green
+
+Run `cmtest.exe -d yes` and triage. Expected categories:
+
+1. **ffmpeg tests** — `FFMPEG*` cases (`FFMPEG`, `FFMPEG plays
+   wav/flac/…`, `FFMPEG stream`, `FFMPEG streams …`, `FFMPEG stream abort`).
+   These should flip green once W1–W3 land; they are the *reason* this milestone
+   pairs playback with the test suite.
+2. **Network-dependent tests** — anything hitting `RemoteLoader`/modland. The
+   `[.]`/`[hide]`-tagged `.uadefile`/`.smusnet`/`m3usubtune` cases stream from
+   the network; they need connectivity and the ffmpeg pipe. Decide whether they
+   run in the Windows gate or are excluded by tag.
+3. **Latent OOB bugs** — the hardened MSYS2 libstdc++ (`_GLIBCXX_ASSERTIONS`)
+   has already caught three real out-of-bounds bugs that ship silently on
+   macOS/Linux (`utils::path::init` empty string; the ansiconsole CR/empty-queue
+   `front()`; the `SID`/`windows.h` clash was a compile error). More may surface
+   as tests exercise new code paths. **Fix these at the source** — they are real
+   cross-platform bugs, not Windows workarounds.
+4. **Disabled-plugin tests** — already guarded out via `NO_<PLUGIN>` (§5); they
+   simply won't exist in the Windows binary. A green Windows run therefore
+   certifies *less* than a macOS run; note that when comparing.
+
+## 20. Risks
+
+| Risk | Likelihood | Mitigation |
+| --- | --- | --- |
+| Non-blocking pipe reads on Windows are fiddly (anonymous pipes don't do EAGAIN) | **High** | `PeekNamedPipe` before `ReadFile`, or overlapped I/O; this is the crux of W2. |
+| Shipping/licensing a Windows ffmpeg binary | Medium | Static LGPL/GPL build; document source + license, mirror the SunVox-binary decision. |
+| CRLF / binary-mode pipe corruption of PCM | Medium | Pipe handles are binary by nature (no text translation), but verify no `_setmode` surprises; PCM is raw bytes. |
+| Network tests flaky/blocked in CI or offline | Medium | Tag-exclude `[.]`/`[hide]` network cases from the default Windows gate; run them opt-in. |
+| More `_GLIBCXX_ASSERTIONS` aborts mid-suite | Medium | Each is a real bug; fix at source. Keep assertions ON for Windows — it is a free sanitizer. |
+| Streamed EOF/endStream doesn't terminate cleanly (hang or early cut) | Low–Med | W3 explicitly verifies the FIFO drain + silence-detector interaction. |

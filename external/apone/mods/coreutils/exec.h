@@ -71,6 +71,7 @@ struct ExecPipe
     HANDLE hPipeRead{nullptr};
     HANDLE hPipeWrite{nullptr};
     HANDLE hProcess{nullptr};
+    bool nonBlocking{false}; // set by setReadNonBlocking(); read() polls when true
 #else
     pid_t pid = -1;
     int outfd{-1};
@@ -79,16 +80,167 @@ struct ExecPipe
 };
 
 #ifdef _WIN32
-inline ExecPipe::ExecPipe(const std::string& cmd) {}
-inline int ExecPipe::read(uint8_t* target, int size) { return -1; }
-inline int ExecPipe::write(uint8_t* source, int size) { return 0; }
-inline ExecPipe::ExecPipe(ExecPipe&& other) noexcept {}
-inline ExecPipe& ExecPipe::operator=(ExecPipe&& other) noexcept { return *this; }
-inline bool ExecPipe::hasEnded() { return true; }
-inline ExecPipe::~ExecPipe() {}
-inline void ExecPipe::Kill() {}
-inline void ExecPipe::setReadNonBlocking() {}
-inline void ExecPipe::closeWrite() {}
+
+// Win32 ExecPipe: spawn `cmd` (via cmd.exe /c, matching the POSIX /bin/sh -c),
+// wired to anonymous pipes for the child's stdin and stdout. Return-code
+// contract matches the POSIX version so callers (FFMPEGPlayer, cm_execute) are
+// identical across platforms:
+//   read():  >0 = bytes; 0 = EOF (child closed stdout); -1 = no data yet
+//            (only in non-blocking mode); -2 = pipe not open / error.
+//   write(): bytes written; <=0 = child gone.
+//   hasEnded(): true once the child process has exited.
+
+inline ExecPipe::ExecPipe(const std::string& cmd)
+{
+    logging::logDebug("ExecPipe (win32) Command Line: '" + cmd + "'");
+
+    SECURITY_ATTRIBUTES sa{};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;        // pipe ends are inheritable by the child
+    sa.lpSecurityDescriptor = nullptr;
+
+    HANDLE childStdoutWrite = nullptr;
+    HANDLE childStdinRead = nullptr;
+
+    // Child stdout -> our hPipeRead ; our hPipeWrite -> child stdin.
+    if (!CreatePipe(&hPipeRead, &childStdoutWrite, &sa, 0) ||
+        !CreatePipe(&childStdinRead, &hPipeWrite, &sa, 0)) {
+        hPipeRead = hPipeWrite = hProcess = nullptr;
+        return;
+    }
+
+    // The parent ends must NOT be inherited by the child, or the child holds a
+    // copy of the stdout write end and we never see EOF (same reasoning as the
+    // POSIX FD_CLOEXEC dance).
+    SetHandleInformation(hPipeRead, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(hPipeWrite, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = childStdinRead;
+    si.hStdOutput = childStdoutWrite;
+    // Match the POSIX impl (dup2 STDOUT->STDERR): child stderr goes to the same
+    // pipe as stdout. ffmpeg is invoked with quiet logging when it pipes PCM, so
+    // this does not corrupt the audio stream; for cm_execute it captures both.
+    si.hStdError = childStdoutWrite;
+
+    // Run through cmd.exe so quoting/redirection in `cmd` behaves like /bin/sh -c.
+    std::string full = "cmd.exe /c " + cmd;
+    std::vector<char> mutableCmd(full.begin(), full.end());
+    mutableCmd.push_back('\0');
+
+    PROCESS_INFORMATION pi{};
+    BOOL ok = CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr,
+                             TRUE, // inherit handles (the child ends)
+                             CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+
+    // Close the child ends in the parent regardless: if spawn failed we don't
+    // need them, and if it succeeded the child has its own copies.
+    CloseHandle(childStdoutWrite);
+    CloseHandle(childStdinRead);
+
+    if (!ok) {
+        CloseHandle(hPipeRead);
+        CloseHandle(hPipeWrite);
+        hPipeRead = hPipeWrite = nullptr;
+        hProcess = nullptr;
+        return;
+    }
+
+    CloseHandle(pi.hThread);
+    hProcess = pi.hProcess;
+}
+
+inline ExecPipe::~ExecPipe() { Kill(); }
+
+inline ExecPipe::ExecPipe(ExecPipe&& other) noexcept
+{
+    hPipeRead = other.hPipeRead;
+    hPipeWrite = other.hPipeWrite;
+    hProcess = other.hProcess;
+    nonBlocking = other.nonBlocking;
+    other.hPipeRead = other.hPipeWrite = other.hProcess = nullptr;
+}
+
+inline ExecPipe& ExecPipe::operator=(ExecPipe&& other) noexcept
+{
+    if (this != &other) {
+        Kill();
+        hPipeRead = other.hPipeRead;
+        hPipeWrite = other.hPipeWrite;
+        hProcess = other.hProcess;
+        nonBlocking = other.nonBlocking;
+        other.hPipeRead = other.hPipeWrite = other.hProcess = nullptr;
+    }
+    return *this;
+}
+
+inline void ExecPipe::Kill()
+{
+    if (hProcess) {
+        DWORD code = 0;
+        if (GetExitCodeProcess(hProcess, &code) && code == STILL_ACTIVE)
+            TerminateProcess(hProcess, 1);
+        CloseHandle(hProcess);
+        hProcess = nullptr;
+    }
+    if (hPipeRead) { CloseHandle(hPipeRead); hPipeRead = nullptr; }
+    if (hPipeWrite) { CloseHandle(hPipeWrite); hPipeWrite = nullptr; }
+}
+
+inline int ExecPipe::read(uint8_t* target, int size)
+{
+    if (!hPipeRead) return -2;
+
+    if (nonBlocking) {
+        // Poll: how many bytes can be read without blocking?
+        DWORD avail = 0;
+        if (!PeekNamedPipe(hPipeRead, nullptr, 0, nullptr, &avail, nullptr)) {
+            // Pipe closed by the child == EOF.
+            return (GetLastError() == ERROR_BROKEN_PIPE) ? 0 : -2;
+        }
+        if (avail == 0)
+            return -1; // no data yet (child still producing) -> "buffering"
+        if ((DWORD)size > avail) size = (int)avail;
+    }
+
+    DWORD got = 0;
+    if (!ReadFile(hPipeRead, target, (DWORD)size, &got, nullptr)) {
+        return (GetLastError() == ERROR_BROKEN_PIPE) ? 0 : -2; // EOF vs error
+    }
+    return (int)got; // 0 here also means EOF
+}
+
+inline int ExecPipe::write(uint8_t* source, int size)
+{
+    if (!hPipeWrite) return -2;
+    DWORD put = 0;
+    if (!WriteFile(hPipeWrite, source, (DWORD)size, &put, nullptr))
+        return -2; // broken pipe / child gone
+    return (int)put;
+}
+
+inline void ExecPipe::setReadNonBlocking()
+{
+    // Anonymous pipes have no non-blocking mode toggle; read() emulates it via
+    // PeekNamedPipe when this flag is set.
+    nonBlocking = true;
+}
+
+inline void ExecPipe::closeWrite()
+{
+    if (hPipeWrite) { CloseHandle(hPipeWrite); hPipeWrite = nullptr; }
+}
+
+inline bool ExecPipe::hasEnded()
+{
+    if (!hProcess) return true;
+    DWORD code = 0;
+    if (!GetExitCodeProcess(hProcess, &code)) return true;
+    return code != STILL_ACTIVE;
+}
+
 #else
 
 // NOTE: the POSIX/C system headers this code needs are included at global scope
