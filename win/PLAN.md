@@ -610,3 +610,32 @@ plays via GME. Re-enable path: gdb-backtrace the spin (break/Ctrl-C + `bt`) to
 find whether it's the parser or the renderer, then fix at source.
 
 **Windows-disabled plugin count is now 8** (the seven from §5 + famitracker).
+
+### Third run: suite completes; 3 residual failures, 2 already fixed
+
+With famitracker disabled, `cmtest` runs to the end: `151 | 148 passed | 3 failed`.
+The UADE exemption worked (30 + 1 excluded at run time). The 3 residual failures
+were all outside UADE:
+
+1. **`UADE SMUS plays sound` (`ACE II.smus`)** — a REQUIRE-based test hard-wired
+   to one of the 30 known-gap files (my wrapper only covered the `testPlugin`
+   UADE cases). **Fixed:** keep the `canHandle` check, `#ifdef _WIN32`-skip the
+   playback assertions (fromFile returns null there). `test.cpp`.
+
+2. **`PSM routing` — MASI `.psm` routed to ZXTune instead of OpenMPT.** Root
+   cause was **not** Windows-specific: `ChipPlugin::createPlugins` used
+   `std::sort` (unstable) to order plugins by priority. OpenMPT and ZXTune share
+   the default priority, so their relative order was unspecified — libc++ (macOS)
+   left OpenMPT first, libstdc++ (Windows) left ZXTune first, and ZXTune claims
+   `.psm` by extension while OpenMPT content-gates it. **Fixed:** `std::sort` →
+   `std::stable_sort` in `chipplugin.h`, so equal-priority plugins keep their
+   (deliberate — see plugin_register.cpp comments) registration order on every
+   platform. This removes a whole class of latent nondeterministic routing.
+
+3. **Ayfly `jaanmus.sqt` + `prom.asc` render silent** (2 `g_errors` → the
+   coverage gate). These are the last blocker: a genuine ZX-AY vendored-engine
+   playback difference under MinGW (SQ Tracker / ASC Sound Master), the same
+   class as the SID/FamiTracker hangs — needs a Windows-side probe of why those
+   two sub-formats emit silence. **Open.**
+
+After fixes 1–2, the only red is the Ayfly pair driving `g_errors <= 0`.

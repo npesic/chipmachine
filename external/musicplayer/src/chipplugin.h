@@ -69,7 +69,15 @@ public:
             fprintf(stderr, "No plugins registered!\n");
         }
 
-        std::sort(plugins.begin(), plugins.end(),
+        // stable_sort, NOT sort: equal-priority plugins must keep their
+        // registration order. Routing relies on it -- e.g. .psm is claimed by
+        // OpenMPT (content-gated to Epic MASI) and ZXTune (by extension); the
+        // MASI-vs-ZX split only works if OpenMPT, registered first, is *checked*
+        // first. std::sort leaves equal elements in an unspecified order that
+        // differs between libstdc++ and libc++, so on Windows ZXTune sorted
+        // ahead of OpenMPT and stole every MASI .psm. stable_sort makes the
+        // order deterministic on every platform.
+        std::stable_sort(plugins.begin(), plugins.end(),
                   [](auto const& a, auto const& b) {
                       return a->priority() > b->priority();
                   });
