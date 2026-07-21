@@ -695,3 +695,48 @@ UADE carve-out** — every enabled plugin, UADE included, must play.
 > Both UADE fixes are **path-handling only** and correct on every platform, but
 > they touch shared code, so re-run `cmtest` on macOS/Linux to confirm no
 > baseline shift there.
+
+## 23. Archived music (Demozoo/Zophar ZIP) — miniz symbol collision
+
+Demozoo hosts music as `.zip` (a module/audio member + readme); the app
+downloads, detects ZIP-by-magic, extracts next to the cache file, and plays the
+member. On Windows this **silently failed** — the zip downloaded but "the file
+was not found," because extraction never produced anything.
+
+Root cause (took a long diagnostic chain, several wrong turns on path
+separators and `fopen_s` before a `LOGW` probe showed the instrumented
+function *never ran*): the tree vendors **five copies of miniz**
+(`apone/mods/miniz`, vgmstream ×2, zxtune, vice), and several export the same
+`mz_zip_*` symbols. On Windows the final link uses
+`-Wl,--allow-multiple-definition`, which bound `archive.cpp`'s `mz_zip_*` calls
+to **vgmstream's** miniz (a different version whose reader fails to open our
+cache zips) instead of apone's. Every fix to apone's copy did nothing because a
+*different* miniz was executing. Same COFF collision class as the
+`sound_flush`/SCSP bugs (§ milestone-3 collision scan) — missed then because
+that scan compared plugins against each other, not against core libs like
+`apone/miniz`.
+
+**Fix (`archive.cpp`):** include the full `miniz.c` in an **anonymous
+namespace** so all its symbols get internal linkage and are private to that TU —
+`archive.cpp`'s calls now always resolve to apone's (working) copy regardless of
+link order. `archive.h` exposes no miniz type, so nothing external breaks. Its
+libc `#include`s are pulled to global scope first so they aren't trapped in the
+namespace. Two belt-and-braces companions: forward-slash-normalize the path
+handed to the archive layer (`MusicPlayerList`), and make apone's miniz use
+plain `fopen` instead of `fopen_s` on `__MINGW64__` (the secure-CRT variant
+misbehaves on MinGW-w64).
+
+**Impact:** fixes **all** ZIP-archived music on Windows — Demozoo, Zophar
+console gamerips, every scene.org compo entry — which were all silently failing.
+
+**Follow-ups worth noting:**
+- The `LOGD`/`LOGW` probes were stripped; the silent `catch(...)` in the ZIP
+  path (which hid this for a while) now logs, so a future archive failure is
+  visible.
+- The **LHA** and **gzip** by-magic paths (`MusicPlayerList`, just below the ZIP
+  block) hand `f0.getName()` to their extractors too; if CPC `.ym` LHA rips or
+  AMP gzip modules misbehave, check for the same mixed-path/collision pattern.
+- The `miniz` static-lib link on the `archive` target is now redundant (miniz is
+  inlined) but harmless; can be dropped as cleanup.
+- **Broader:** re-run the symbol-collision scan *including core libs* (not just
+  plugin-vs-plugin) — miniz was one missed collision; there may be others.

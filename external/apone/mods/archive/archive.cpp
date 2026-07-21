@@ -143,10 +143,7 @@ class ZipFile : public Archive {
 public:
 	ZipFile(const string &fileName, const string &workDir = ".") : workDir(workDir) {
 		memset(&zipArchive, 0, sizeof(zipArchive));
-		bool ok = mz_zip_reader_init_file(&zipArchive, fileName.c_str(), 0);
-		LOGD("ZipFile: init=%d files=%u", (int)ok,
-		     ok ? (unsigned)zipArchive.m_total_files : 0u);
-		if(!ok)
+		if(!mz_zip_reader_init_file(&zipArchive, fileName.c_str(), 0))
 			throw archive_exception("Could not open zip file");
 	}
 
