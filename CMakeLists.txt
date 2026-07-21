@@ -207,13 +207,19 @@ set(MUSICPLAYER_PLUGINS
 #                        fails with error 126. Drop the official Windows binary
 #                        into sunvoxplugin/sunvox_lib/sunvox.dll and remove this
 #                        entry to enable it.
+#   * famitrackerplugin -- the vendored FamiTracker CX engine deterministically
+#                        HANGS on the first .ftm under MinGW (FTM parser or
+#                        renderSamples spin; not I/O -- FileIO uses "rb"). It
+#                        wedges cmtest before the coverage gate. Disabled to
+#                        unblock; needs a gdb backtrace to pinpoint the spin
+#                        (see win/PLAN.md §21). NES 2A03 .nsf still plays via GME.
 # The two most worth re-enabling later are dmfplugin (popular format; needs
 # -Wa,-mbig-obj on the Furnace slice + the Windows config-path source) and
 # mikmodplugin (needs a static-link MIKMODAPI macro + a random() shim).
 if(WIN32)
     set(WIN32_DISABLED_PLUGINS
         ixsplugin eupplugin wsrplugin playerproplugin mikmodplugin dmfplugin
-        sunvoxplugin)
+        sunvoxplugin famitrackerplugin)
     foreach(_p ${WIN32_DISABLED_PLUGINS})
         list(REMOVE_ITEM MUSICPLAYER_PLUGINS ${_p})
         string(TOUPPER ${_p} _p_uc)

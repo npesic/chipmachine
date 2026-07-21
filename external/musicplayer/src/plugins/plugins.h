@@ -63,7 +63,9 @@
 #ifndef NO_MIKMODPLUGIN
 #include "mikmodplugin/MikModPlugin.h"
 #endif
+#ifndef NO_FAMITRACKERPLUGIN
 #include "famitrackerplugin/FamiTrackerPlugin.h"
+#endif
 #include "goattrackerplugin/GoatTrackerPlugin.h"
 #include "vgmstreamplugin/VGMStreamPlugin.h"
 #include "victrackerplugin/VTPlugin.h"

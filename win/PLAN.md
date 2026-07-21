@@ -591,3 +591,22 @@ summary). The coverage gate stays `REQUIRE(g_errors <= 0)` on every platform, so
 `cmtest` is now green-minus-UADE. Re-enabling the UADE fixtures is a matter of
 fixing the emulator gap (the diagnostic above) — no test change needed, since
 the wrapper simply reports a gap of 0 once they pass.
+
+### Second finding: `famitrackerplugin` hangs the run
+
+The first full run also revealed that `cmtest` **never reached the coverage
+gate** — it hung deterministically on the first `.ftm`
+(`testmus/famitracker/2a03_hfrth.ftm`), the log ending mid-line at exactly the
+same spot on two separate runs. The hang is inside the vendored FamiTracker CX
+engine — either the FTM parser (`FtmDocument::read`) or a single
+`SoundGen::renderSamples()` spin — **not** I/O (its `FileIO` uses `"rb"`,
+verified). `testPlugin`'s retry loop is bounded (≤50 iters), so it can only be a
+single call spinning internally, the same class as the SID `psid_play` hang.
+
+**Disabled on Windows** (added to `WIN32_DISABLED_PLUGINS`, guarded in
+`plugins.h` / `plugin_register.cpp` / the two `test.cpp` cases) so the suite can
+complete and reveal the ~20 plugins that run after it. NES 2A03 `.nsf` still
+plays via GME. Re-enable path: gdb-backtrace the spin (break/Ctrl-C + `bt`) to
+find whether it's the parser or the renderer, then fix at source.
+
+**Windows-disabled plugin count is now 8** (the seven from §5 + famitracker).

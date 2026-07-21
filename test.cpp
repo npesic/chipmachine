@@ -1889,11 +1889,14 @@ TEST_CASE("JayTrax", "[music]") { testPlugin<musix::JxsPlugin>("testmus/jxs", ""
 #ifndef NO_IXSPLUGIN
 TEST_CASE("IXS", "[music]") { testPlugin<musix::IXSPlugin>("testmus/ixs", ""); }
 #endif // NO_IXSPLUGIN
+#ifndef NO_FAMITRACKERPLUGIN
 TEST_CASE("FamiTracker", "[music]") { testPlugin<musix::FamiTrackerPlugin>("testmus/famitracker", ""); }
+#endif
 
 // .ftm is two unrelated formats: NES FamiTracker (magic "FamiTracker Module")
 // vs Atari "Face The Music" (magic "FTMN", handled by OpenMPT). The two plugins
 // must content-gate so each claims only its own files. Guards the routing split.
+#ifndef NO_FAMITRACKERPLUGIN
 TEST_CASE("FamiTracker vs FaceTheMusic routing", "[music]")
 {
     logging::setLevel(logging::Level::Warning);
@@ -1907,6 +1910,7 @@ TEST_CASE("FamiTracker vs FaceTheMusic routing", "[music]")
     REQUIRE_FALSE(fami.canHandle(ftmn)); // and declines Face The Music
     REQUIRE(ompt.canHandle(ftmn));       // OpenMPT still owns Face The Music
 }
+#endif
 
 // PlayerPRO ".mad" (Macintosh tracker, "MADG"/"MADF"/"MADK") plays via the
 // vendored public-domain MADDriver. The ".mad" extension collides with AdPlug's
