@@ -129,8 +129,11 @@ public:
 		//zipFile = zip_open(fileName.c_str(), 0, NULL);
 		memset(&zipArchive, 0, sizeof(zipArchive));
 		bool ok = mz_zip_reader_init_file(&zipArchive, fileName.c_str(), 0);
-		LOGW("ZipFile: mz_zip_reader_init_file('%s') = %d files=%u",
-		     fileName.c_str(), (int)ok,
+		extern int g_mz_init_fail_step;
+		extern long long g_mz_init_file_size;
+		LOGW("ZipFile: init=%d fail_step=%d (1=fopen 2=seek 3=internal "
+		     "4=central_dir) miniz_size=%lld files=%u",
+		     (int)ok, g_mz_init_fail_step, g_mz_init_file_size,
 		     ok ? (unsigned)zipArchive.m_total_files : 0u);
 		if(!ok)
 			throw archive_exception("Could not open zip file");

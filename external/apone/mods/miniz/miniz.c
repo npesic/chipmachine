@@ -3331,20 +3331,32 @@ static size_t mz_zip_file_read_func(void *pOpaque, mz_uint64 file_ofs, void *pBu
   return MZ_FREAD(pBuf, 1, n, pZip->m_pState->m_pFile);
 }
 
+/* DIAG: which step of mz_zip_reader_init_file failed, for LOGW in archive.cpp.
+   0=ok 1=fopen 2=seek 3=init_internal 4=read_central_dir. */
+int g_mz_init_fail_step = 0;
+long long g_mz_init_file_size = -1;
 mz_bool mz_zip_reader_init_file(mz_zip_archive *pZip, const char *pFilename, mz_uint32 flags)
 {
   mz_uint64 file_size;
+  g_mz_init_fail_step = 0;
+  g_mz_init_file_size = -1;
   MZ_FILE *pFile = MZ_FOPEN(pFilename, "rb");
   if (!pFile)
+  {
+    g_mz_init_fail_step = 1;
     return MZ_FALSE;
+  }
   if (MZ_FSEEK64(pFile, 0, SEEK_END))
   {
+    g_mz_init_fail_step = 2;
     MZ_FCLOSE(pFile);
     return MZ_FALSE;
   }
   file_size = MZ_FTELL64(pFile);
+  g_mz_init_file_size = (long long)file_size;
   if (!mz_zip_reader_init_internal(pZip, flags))
   {
+    g_mz_init_fail_step = 3;
     MZ_FCLOSE(pFile);
     return MZ_FALSE;
   }
@@ -3354,6 +3366,7 @@ mz_bool mz_zip_reader_init_file(mz_zip_archive *pZip, const char *pFilename, mz_
   pZip->m_archive_size = file_size;
   if (!mz_zip_reader_read_central_dir(pZip, flags))
   {
+    g_mz_init_fail_step = 4;
     mz_zip_reader_end(pZip);
     return MZ_FALSE;
   }
