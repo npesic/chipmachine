@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <coreutils/log.h>
 #include <coreutils/utils.h>
 #include <unordered_map>
@@ -1034,7 +1035,28 @@ void MusicPlayerList::playCurrent()
                 fclose(fp);
             }
             if (isLha) {
-                std::string dir = f0.getName() + "_lha";
+                // Extract into a SHORT, stable dir under the cache root, NOT
+                // alongside the archive ("<cachefile>_lha"). The _webfiles cache
+                // name is the full URL-encoded song name (~150 chars for
+                // CPC-Power YM titles); appending "_lha/" and re-appending the
+                // ~90-char member name doubled the path past Windows' MAX_PATH
+                // (260). lhasa's extract fopen then failed (logged "Failed to
+                // extract", leaving the raw archive -- which StSound rejects and
+                // UADE crashes its emulated 68k on), or the ext-rename copy below
+                // threw an uncaught io_exception ("...for writing: No such file or
+                // directory") that terminated the app. Short titles ("Menu") fit
+                // and worked; long ones didn't. A hash-named dir keeps the total
+                // well under the limit and is stable across runs (re-selection
+                // reuses the extracted member). POSIX has no such limit, so this
+                // is a no-op there beyond the shorter path.
+                uint64_t h = 1469598103934665603ULL; // FNV-1a of the archive path
+                for (unsigned char c : f0.getName()) {
+                    h ^= c;
+                    h *= 1099511628211ULL;
+                }
+                std::string dir = (Environment::getCacheDir() / "_ym" /
+                                   std::to_string(h))
+                                      .string();
                 for (auto const& rel : extractLha(f0.getName(), dir)) {
                     File member = File(dir + "/" + rel);
                     if (member.exists()) {

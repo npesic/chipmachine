@@ -918,3 +918,46 @@ files against the source — so only `cleanName` changed.
 defensive try/catch around the load-callback body would degrade a bad copy/extract
 to a play error instead of a crash — worth doing but out of scope for this
 single-format fix.
+
+## 29. StSound/UADE `.ym` crash — Windows MAX_PATH (260) from doubled cache names
+
+**Symptom.** CPC-Power Amstrad `.ym` rips (LHA-wrapped YM streams). A short-titled
+tune ("30 Years Amstrad Megademo - Menu") played fine via StSound, but longer
+titles failed in three escalating ways:
+
+- **Vanity Bad CRTC 2:** `LhaArchive.cpp:138 Failed to extract ...().ym5` → StSound
+  got the raw (unextracted) LHA archive → "not a valid YM file" → UADE then tried
+  it and crashed its emulated 68k (`Illegal instruction ... score crashed` — caught
+  by UADE, non-fatal).
+- **Introduction:** `terminate called after throwing 'utils::io_exception' —
+  Could not open file '...ym_lha/...ym' for writing: No such file or directory` →
+  hard crash.
+
+**Root cause: Windows MAX_PATH (260 chars).** The `_webfiles` cache stores each
+download under its **full URL-encoded name**, which for these titles is ~150 chars
+(`_webfiles/https%3a%2f%2fwww.cpc-power.com%2fYM/30%20Years%20Amstrad%20Megademo%20-%20Introduction%20%282016%29%28Benediction%29%28SOS%29.ym`).
+The StSound LHA-by-magic branch (`MusicPlayerList.cpp`) extracted into
+`f0.getName() + "_lha"` — i.e. that ~150-char path **plus** `_lha/` **plus the
+~90-char member name again** ≈ 280 chars, past the 260 limit. `fopen(..., "wb")`
+(lhasa's extract writer, or the `.ym5`→`.ym` ext-rename `File::copy` at
+`file.cpp:177`) then failed with `ENOENT`. Short titles stayed under 260 and
+worked; long ones didn't. POSIX has no such limit, so macOS/Linux always worked.
+Same "uncaught io_exception in a detached callback → terminate" mechanism noted in
+§28.
+
+**Fix (targeted).** Extract into a SHORT, stable dir under the cache root
+(`<cache>/_ym/<FNV-1a hash of the archive path>/`) instead of doubling the long
+`_webfiles` name. Keeps the total well under 260, is stable across runs
+(re-selection reuses the extracted member), and no-ops on POSIX. This also fixes
+the UADE 68k crash, which was a downstream symptom: once extraction succeeds,
+StSound plays the real YM stream and UADE is never handed the raw archive.
+
+**Broader Windows limitation (follow-up, not done).** MAX_PATH will bite any long
+cache path, not just this branch — the ZIP `_x`, `.ungz`, `loadLhaSong`'s
+`_lha2/<safeName>`, and the clean-name copy all build paths from the long
+URL-encoded `_webfiles` names. The general fix is process-wide long-path support:
+a `longPathAware` application manifest **plus** prefixing absolute file paths with
+`\\?\` (backslashes only, no `.`/`..`) at the `fopen` sites in apone `file.cpp`/
+`file.h` — and, harder, in lhasa's C extractor. Until that lands, expect isolated
+long-title failures in other collections and shorten paths per-site as they surface
+(as done here). Tracked alongside the §28 try/catch hardening.
