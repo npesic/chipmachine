@@ -1111,7 +1111,20 @@ void MusicPlayerList::playCurrent()
         // is just "1") have no extension here -- re-copying would strip the
         // ".xm"/".umx" the Content-Disposition rename just added and leave the
         // player unable to route the file by extension.
-        auto cleanName = path_filename(currentInfo.path);
+        //
+        // Derive the clean name from `path` (the source-prefix-stripped relpath),
+        // NOT currentInfo.path. For NESTED paths the two agree -- path_filename()
+        // drops the "coll::Format/Composer/" head at the last slash. But a FLAT
+        // collection stores a bare filename (nsfe: "33_bob1.nsfe", local_dir
+        // music/Console), so currentInfo.path is "nsfe::33_bob1.nsfe" with no
+        // slash for path_filename() to split on -- the "nsfe::" source prefix
+        // then leaks into cleanName and the copy target becomes
+        // ".../Console/nsfe::33_bob1.nsfe". POSIX tolerates ':' in a filename (it
+        // silently littered the mirror with a bogus copy); Windows rejects it
+        // ("Invalid argument"), and the uncaught io_exception terminated the app.
+        // Using `path` yields "33_bob1.nsfe", which equals path_filename(f0) for a
+        // local mirror, so the whole re-materialise correctly no-ops.
+        auto cleanName = path_filename(path);
         if (!cleanName.empty() && !path_extension(cleanName).empty() &&
             path_filename(f0.getName()) != cleanName) {
             File cleanSong = parentDir / cleanName;

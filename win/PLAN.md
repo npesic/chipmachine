@@ -829,3 +829,92 @@ child's stderr to the stdout pipe), so the redirect genuinely matters — withou
 it yt-dlp warnings would pollute the resolved URL. yt-dlp itself resolves via the
 bundled onedir on `bin/ytdlp` (PATH prepend in main.cpp), so availability was not
 the issue — only the shell syntax.
+
+## 27. Windows runtime binaries — external tools bundled in `bin/`
+
+Two external command-line tools ship *alongside* the executable (not linked in)
+and are invoked at runtime via `ExecPipe`/`cm_execute`. They are **platform
+binaries** — the repo tree carries the macOS/Linux builds under `bin/`, and the
+Windows port needs the Windows equivalents in the same layout. Both were hit as
+"works on Mac, missing on Windows" bugs (ffmpeg first, yt-dlp later); this is the
+single source of truth so the eventual Windows packaging step bundles them
+instead of relying on manual drops.
+
+| Tool | Used for | Invoked as | Windows requirement in `bin/` |
+|---|---|---|---|
+| **ffmpeg** | mp3/ogg/flac/wav/… decode + YouTube/radio streaming (§ FFMPEGPlugin) | `bin\ffmpeg.exe` (explicit path, hard-coded in `FFMPEGPlugin.cpp` under `_WIN32`) | `bin\ffmpeg.exe` |
+| **yt-dlp** | Resolve a YouTube/Pouet watch URL → audio stream URL (`lua/init.lua` `on_parse_youtube`) | bare `yt-dlp` (resolved via PATH; `main.cpp` prepends `bin\ytdlp` + PATHEXT → `.exe`) | `bin\ytdlp\yt-dlp.exe` **+ matching `bin\ytdlp\_internal\`** |
+
+Notes / gotchas:
+- **Invocation asymmetry.** ffmpeg is called by explicit path (`bin\ffmpeg.exe`,
+  `_WIN32` branch of `FFMPEGPlugin`), but yt-dlp is called *bare* and found via
+  the PATH prepend in `main.cpp` (`exeDir`, `exeDir\ytdlp`, `binDir`,
+  `binDir\ytdlp`). On Windows a bare `yt-dlp` only runs if the file is named
+  `yt-dlp.exe` (PATHEXT) — a `yt-dlp` with no extension (as the Linux onedir
+  ships) will not execute.
+- **yt-dlp must be the *onedir* Windows build** (`yt-dlp_win.zip` → extract to
+  `bin\ytdlp\`, giving `yt-dlp.exe` + `_internal\`). Do **not** use the onefile
+  `yt-dlp.exe`: it re-extracts its whole runtime to a temp dir on every run
+  (~8s), so each YouTube resolve would take ~10s (see the `main.cpp` bundling
+  note). The `_internal\` must be the **Windows** payload that matches the
+  Windows `yt-dlp.exe` — you cannot drop a Windows `yt-dlp.exe` next to a Linux
+  `_internal\`.
+- **Staleness.** YouTube breaks yt-dlp extraction clients frequently, so even the
+  correct Windows binary fails with `Failed to extract any player response` if
+  stale. Bundle a recent `yt-dlp_win.zip`. The pinned player client
+  (`android_vr`) lives in `lua/init.lua` and may also need updating over time
+  (kept in sync with the UA in `FFMPEGPlugin.cpp`).
+- **Suppressed errors.** Because `2>NUL` (§26) hides yt-dlp's stderr, a missing/
+  broken binary surfaces only as an empty resolve → "Failed to extract YouTube
+  stream URL". To debug, run the `bin\ytdlp\yt-dlp.exe ... --get-url "<url>"`
+  command by hand *without* `2>NUL` to see the real error.
+
+**Follow-up (packaging):** `package_app.sh` (macOS) copies these into the .app
+bundle; the Windows packaging path needs the equivalent — fetch `ffmpeg.exe` and
+`yt-dlp_win.zip` and stage them under `bin\` / `bin\ytdlp\`. Until that exists
+they are manual drops on each Windows build.
+
+## 28. Game Music Engine crash — `::` source prefix leaks into a Windows path
+
+**Symptom.** Selecting an NSFE tune (nsfe collection, decoded by the GME plugin)
+crashed the whole app:
+
+```
+[RemoteLoader.cpp:199] Serving from local mirror: ...\music\Console/33_bob1.nsfe
+[MusicPlayerList.cpp:1077] Database file extension/format: ''
+terminate called after throwing 'utils::io_exception'
+  what():  Could not open file '...\music\Console/nsfe::33_bob1.nsfe' for writing: Invalid argument
+```
+
+**Root cause.** `nsfe` is a **flat** collection: `data/nsfe.txt` stores each song's
+path as a bare filename (`33_bob1.nsfe`, no directory), with `id = "nsfe"` and
+`local_dir = "music/Console"` (`lua/db.lua`). `MusicDatabase::lookup()` prepends the
+collection id → `currentInfo.path = "nsfe::33_bob1.nsfe"`. `RemoteLoader::load()`
+strips that `nsfe::` source prefix and serves `music/Console/33_bob1.nsfe`
+correctly. But `playCurrent()`'s clean-name re-materialise step
+(`MusicPlayerList.cpp` ~1114) built its copy target with
+`path_filename(currentInfo.path)`. `path_filename` strips a source prefix only via
+the last slash — and a flat path has **no slash after the prefix**, so `nsfe::`
+leaked through: `cleanName = "nsfe::33_bob1.nsfe"`, copy target
+`music/Console/nsfe::33_bob1.nsfe`.
+
+`:` is legal in a POSIX filename (macOS/Linux silently littered the mirror with a
+bogus `nsfe::…` copy and played on), but **illegal on Windows** → `File::copy`
+throws `io_exception`, and because the copy runs in a detached RemoteLoader
+callback the exception is uncaught → `std::terminate`. Same `:`-illegal-on-Windows
+family as the LHA path-helper bug (§25).
+
+**Fix.** Derive `cleanName` from the source-prefix-stripped local `path` variable
+(already computed at the top of `playCurrent`), not `currentInfo.path`. For nested
+modland paths the two agree (the slash strips the prefix either way); for flat
+collections `path` is already `33_bob1.nsfe`, which equals `path_filename(f0)` for a
+local mirror, so the whole re-materialise correctly no-ops. `songDirUrl` (line
+1096) deliberately keeps the prefix — RemoteLoader needs it to resolve companion
+files against the source — so only `cleanName` changed.
+
+**Latent robustness note (not fixed here).** The clean-name `File::copy` (and other
+`File`/archive ops) run inside detached RemoteLoader callbacks where an uncaught
+`utils::io_exception` terminates the process rather than failing just the track. A
+defensive try/catch around the load-callback body would degrade a bad copy/extract
+to a play error instead of a crash — worth doing but out of scope for this
+single-format fix.
