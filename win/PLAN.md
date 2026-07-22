@@ -960,4 +960,58 @@ a `longPathAware` application manifest **plus** prefixing absolute file paths wi
 `\\?\` (backslashes only, no `.`/`..`) at the `fopen` sites in apone `file.cpp`/
 `file.h` — and, harder, in lhasa's C extractor. Until that lands, expect isolated
 long-title failures in other collections and shorten paths per-site as they surface
-(as done here). Tracked alongside the §28 try/catch hardening.
+(as done here). Tracked alongside the §28 try/catch hardening. **Superseded for the
+web cache by §30**, which shortens the cache path at its single source instead.
+
+## 30. Hively/archive.org — web-cache path exceeds MAX_PATH (the general cure)
+
+**Symptom.** A Hively `.ahx` nested deep inside an archive.org zip-in-zip
+(`keygen-music-2020-03-pack.zip/2020-03-pack/KEYGENMUSiC MusicPack/TorbyTorrents/…`)
+never played. The download failed at write time:
+
+```
+Download write failed, aborting transfer of '...intro.ahx':
+  Could not open file '...\_webfiles/https%3a%2f...%2fTorbyTorrents/TorbyTorrents%20-%20Advanced%20Dungeons%20and%20Dragons%20intro.ahx.download'
+  for writing: No such file or directory
+```
+
+**Why this one is different from §29.** §29 was a *doubled* path fixable by a shorter
+extraction dir. Here the cache name is inherently ~230 chars — the full nested
+archive.org URL, percent-encoded — and adding `.download` pushes it past MAX_PATH
+(260). No per-site shortening helps: even if `utils::File`'s write/rename were
+patched, the **Hively plugin re-opens the `.ahx` by that same long path via its own
+`fopen`**, so the tune still wouldn't play. This is the case the §29 follow-up
+anticipated, and it forces the *general* cure.
+
+**Why not the `\\?\` / manifest route.** This build links via `C:\msys64\mingw64`
+= the **MinGW / msvcrt** CRT (not UCRT). msvcrt does **not** honour a
+`longPathAware` manifest for its narrow `fopen`/`stat`, so that approach is
+unreliable here; and `\\?\`-wrapping every `fopen` would mean touching not just
+apone `file.cpp` but every plugin's own C file I/O, lhasa, miniz, … — unbounded.
+
+**Fix — shorten the cache path at its single source.** `webutils::Web` (apone
+`web.h`) already had `clampComponent()`, but it only bounded each path *component*
+to 200 (POSIX NAME_MAX/255); the **total** `cacheDir + '/' + urlPart + '/' +
+fileName + ".download"` still summed past 260 on Windows. Changes:
+
+- `clampComponent(comp, kMax=200)` — now takes a max-length argument (with
+  underflow-guarded `keep`) so a tighter budget can be requested.
+- New `cacheComponents(url)` — the **single source of truth** for the cache path,
+  called by BOTH `getFile()` (writer) and `inCache()` (reader) so they can never
+  disagree. On `_WIN32` it budgets the whole path against 259 (reserving the
+  `.download` suffix) and, when it overflows, hash-compresses the long **directory**
+  component while keeping the **file** component intact — its extension is what
+  plugin routing and companion-name derivation key off. POSIX is unchanged
+  (per-component clamp only; total may be up to PATH_MAX).
+
+Because the *actual on-disk path* is now short, the download write, the
+`.download`→final rename, the `inCache`/`exists` replay lookup, AND every plugin's
+own `fopen` all get a sub-260 path — one fix covers the whole class, not just this
+plugin. Deterministic (FNV-1a) so a file is always found where it was stored.
+`WebGetter` in `webgetter.cpp` is a separate legacy class RemoteLoader does not use
+(`RemoteLoader::webgetter` is a `webutils::Web`), so it was left alone.
+
+**Note.** This supersedes §29's "shorten per-site" advice *for anything routed
+through the web cache* (the majority). Non-cache paths (e.g. the §29 `_ym` LHA
+extraction dir, `_lha2`, ZIP `_x`) still build their own paths and keep their
+local shortening. The §28 try/catch hardening remains worthwhile independently.

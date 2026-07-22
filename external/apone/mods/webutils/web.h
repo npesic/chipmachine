@@ -5,6 +5,7 @@
 #include <coreutils/log.h>
 #include <coreutils/environment.h>
 #include <string>
+#include <utility>
 #include <cstdio>
 #include <cstdint>
 #include <algorithm>
@@ -381,10 +382,11 @@ public:
 	// limit is returned byte-for-byte unchanged, so existing cache entries stay
 	// valid; only over-long components are rewritten to "<head>~<hash><ext>",
 	// where the FNV-1a hash of the full component keeps distinct URLs distinct.
-	static std::string clampComponent(const std::string &comp) {
-		// 200 leaves headroom under 255 for the ".download" temp suffix and any
-		// future decorations, on both the directory and the file component.
-		constexpr size_t kMax = 200;
+	static std::string clampComponent(const std::string &comp, size_t kMax = 200) {
+		// Default 200 leaves headroom under 255 for the ".download" temp suffix
+		// and any future decorations, on both the directory and the file
+		// component. A smaller kMax is passed on Windows to honour the TOTAL
+		// MAX_PATH budget (see cacheComponents()).
 		if (comp.size() <= kMax)
 			return comp;
 		// FNV-1a 64-bit — deterministic across runs so the cache path a file was
@@ -399,7 +401,11 @@ public:
 		auto dot = comp.find_last_of('.');
 		if (dot != std::string::npos && comp.size() - dot <= 12)
 			ext = comp.substr(dot);
-		size_t keep = kMax - 1 /*'~'*/ - 16 /*hash*/ - ext.size();
+		// Overhead of the "~<16 hex>" tag plus the preserved extension. Guard
+		// against underflow when kMax is tighter than the overhead (a very small
+		// budget still yields at least the "~<hash><ext>" tail).
+		size_t overhead = 1 /*'~'*/ + 16 /*hash*/ + ext.size();
+		size_t keep = kMax > overhead ? kMax - overhead : 0;
 		// Don't truncate in the middle of a "%XX" escape or a UTF-8 multibyte
 		// sequence; back off to a clean boundary.
 		while (keep > 0) {
@@ -413,13 +419,46 @@ public:
 		return comp.substr(0, keep) + "~" + hex + ext;
 	}
 
-	template <typename FX> std::shared_ptr<WebJob> getFile(const std::string &url, FX cb) {
-		auto job = std::make_shared<WebJobImpl<FX, decltype(&FX::operator())>>(cb);
+	// Build the two cache path components ("<urlPart>", "<fileName>") for a URL.
+	// SINGLE source of truth so getFile() (writer) and inCache() (reader) can
+	// never disagree on where a file lives.
+	//
+	// The per-component clamp above is enough on POSIX (only NAME_MAX/255 per
+	// component is enforced; the total path may be up to PATH_MAX/4096). Windows
+	// instead caps the TOTAL path at MAX_PATH (260) — and this build links the
+	// MinGW/msvcrt CRT, which does NOT honour a longPathAware manifest, so the
+	// only reliable cure is to keep the assembled path short. getFile() also
+	// appends ".download" to the target during the transfer, so budget that too.
+	// When the naive total overflows, hash the long directory component
+	// (urlPart) harder while keeping the file component intact — its extension is
+	// what plugin routing and companion-name derivation key off.
+	std::pair<std::string, std::string>
+	cacheComponents(const std::string &url) const {
 		auto slash = url.find_last_of('/');
-		auto fileName = url.substr(slash+1);
+		auto fileName = url.substr(slash + 1);
 		auto pathName = url.substr(0, slash);
 		auto urlPart = clampComponent(utils::urlencode(baseUrl + pathName, ":/\\?;!"));
-		auto fileNameEncoded = clampComponent(utils::urlencode(fileName, ":/\\?;!"));
+		auto fileEnc = clampComponent(utils::urlencode(fileName, ":/\\?;!"));
+#ifdef _WIN32
+		constexpr size_t kPathMax = 259; // leave 1 under 260
+		// cacheDir + '/' + urlPart + '/' + fileEnc + ".download"
+		const size_t fixed = cacheDir.getName().size() + 2 + 9;
+		if (fixed + urlPart.size() + fileEnc.size() > kPathMax) {
+			// If the file component alone leaves no room for a directory, hash
+			// it too (rare — needs a ~200-char single filename).
+			if (fixed + fileEnc.size() + 18 > kPathMax)
+				fileEnc = clampComponent(fileEnc, 48);
+			size_t used = fixed + fileEnc.size();
+			size_t budget = used + 18 <= kPathMax ? kPathMax - used : 18;
+			urlPart = clampComponent(urlPart, budget);
+		}
+#endif
+		return { urlPart, fileEnc };
+	}
+
+	template <typename FX> std::shared_ptr<WebJob> getFile(const std::string &url, FX cb) {
+		auto job = std::make_shared<WebJobImpl<FX, decltype(&FX::operator())>>(cb);
+		auto [urlPart, fileNameEncoded] = cacheComponents(url);
 		utils::makedirs(cacheDir / urlPart);
 		auto target = cacheDir / urlPart / fileNameEncoded;
 		job->setTarget(target);
@@ -469,14 +508,9 @@ public:
 	}
 
 	bool inCache(const std::string &url) const {
-		auto slash = url.find_last_of('/');
-		auto fileName = url.substr(slash+1);
-		// Must match the exact encode set used by getFile() when the file was
-		// stored (note the trailing '!'); otherwise URLs containing '!' resolve
-		// to a different cache name here and a cached file is reported missing.
-		fileName = clampComponent(utils::urlencode(fileName, ":/\\?;!"));
-		auto pathName = url.substr(0, slash);
-		auto urlPart = clampComponent(utils::urlencode(baseUrl + pathName, ":/\\?;!"));
+		// Same construction as getFile() so a stored file is always found —
+		// including the Windows total-path clamp (see cacheComponents()).
+		auto [urlPart, fileName] = cacheComponents(url);
 		auto target = cacheDir / urlPart / fileName;
 		return utils::File::exists(target);
 	}
