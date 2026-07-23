@@ -17,13 +17,14 @@
 #
 # Usage:
 #   ./win/package_win.sh [BUILD_DIR]
-# BUILD_DIR defaults to ../build relative to the repo (matches package_app.sh).
+# BUILD_DIR defaults to builds/release inside the repo (where ninja builds
+# chipmachine.exe on the Windows box); pass an explicit path to override.
 set -euo pipefail
 SECONDS=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHIPMACHINE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BUILD_DIR="${1:-$(cd "${CHIPMACHINE_DIR}/.." && pwd)/build}"
+BUILD_DIR="${1:-${CHIPMACHINE_DIR}/builds/release}"
 
 STAGE_NAME="ChipMachine"
 STAGE_DIR="${CHIPMACHINE_DIR}/../${STAGE_NAME}"
