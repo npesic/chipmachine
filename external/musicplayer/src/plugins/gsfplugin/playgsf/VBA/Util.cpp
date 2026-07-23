@@ -1052,17 +1052,22 @@ void utilGetBasePath(const char *file, char *buffer)
 {
 	strcpy(buffer,file);
 
-#ifdef LINUX
-	char *p = strrchr(buffer, '/');
-#else
-	char *p = strrchr(buffer, '\\');
-#endif
+	// Split off the directory on whichever separator appears LAST -- do not
+	// trust the platform's canonical separator. On Windows the streamed path
+	// is mixed: the cache dir prefix uses native '\' (C:\...\chipmachine\
+	// _webfiles) while apone's web cache joins the encoded url dir and the
+	// file name with '/'. Splitting on '\' only would stop at "_webfiles" and
+	// point the _lib (.gsflib) lookup at the wrong directory, so the companion
+	// -- fetched right next to the .minigsf -- is never found ("Failed to load
+	// library" -> IMAGE_UNKNOWN -> "Unsupported").
+	char *fwd = strrchr(buffer, '/');
+	char *bwd = strrchr(buffer, '\\');
+	char *p = fwd > bwd ? fwd : bwd;
 
-	
 	if(p)
 		*p = 0;
 	else {
-		strcpy(buffer, "./"); // no path	
+		strcpy(buffer, "./"); // no path
 	}
 }
 

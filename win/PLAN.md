@@ -1015,3 +1015,51 @@ plugin. Deterministic (FNV-1a) so a file is always found where it was stored.
 through the web cache* (the majority). Non-cache paths (e.g. the §29 `_ym` LHA
 extraction dir, `_lha2`, ZIP `_x`) still build their own paths and keep their
 local shortening. The §28 try/catch hardening remains worthwhile independently.
+
+## 31. Gameboy Advance (GSF) — `.gsflib` companion sought in wrong dir (separator)
+
+Symptom (modland stream): the `.minigsf` downloads fine, then
+`GSFPlugin error: Could not load gsf`, preceded by a bare `Unsupported` on stderr.
+Not a MAX_PATH case — the modland path is well under 260, and §30 leaves it
+untouched.
+
+`.gsf`/`.minigsf` rips are "mini" PSF files that reference a shared `.gsflib`
+program library via the PSF `_lib` tag. `GSFPlugin::getSecondaryFiles` →
+`psfLibFiles` correctly fetches that `.gsflib` **next to** the `.minigsf` in the
+web cache. The failure is downstream, inside the vendored VBA loader: to open the
+lib, `utildecompGSF` (`playgsf/VBA/Util.cpp`) calls `utilGetBasePath(file, dir)`
+to get the `.minigsf`'s directory, then appends the lib name.
+
+`utilGetBasePath` split the path on the platform's canonical separator only — on
+Windows (`#else`) that's `\` via `strrchr(buffer,'\\')`. But the streamed on-disk
+path is **mixed-separator**:
+
+```
+C:\Users\lab\.cache\chipmachine\_webfiles/https%3a…Surf's Up/2749.018b.minigsf
+                              ^ last '\'                     ^ real dir sep is '/'
+```
+
+The cache-dir prefix uses native `\` (from `Environment::getCacheDir()`) while
+apone's web cache joins the encoded url-dir and the file name with `/`. So
+`strrchr('\\')` stopped at `…chipmachine\_webfiles`, yielding
+`C:\…\chipmachine` and dropping the entire `_webfiles/…Surf's Up/` portion. The
+`.gsflib` — sitting right next to the `.minigsf` — was then looked for in
+`chipmachine\` and never found: `decompressGSF` fails → "Failed to load library"
+→ `utildecompGSF` returns false → `utilIsGBAImage`/`utilFindType` return
+`IMAGE_UNKNOWN` → `GSFRun` prints **"Unsupported"** and returns false → the
+plugin's `Could not load gsf`. Exactly the log's ordering. macOS/Linux use `/`
+throughout, so the `#ifdef LINUX` `/` split matched and the lib loaded — why it
+passed there.
+
+**Fix:** `utilGetBasePath` now splits on whichever of `/` or `\` appears **last**
+(`fwd = strrchr(buffer,'/'); bwd = strrchr(buffer,'\\'); p = fwd>bwd?fwd:bwd;`),
+independent of platform. POSIX paths carry no `\` so `bwd` is NULL and behaviour
+is unchanged there; Windows now correctly keeps the full `_webfiles/…` directory
+and finds the companion. Same family as §25/§22 — trust the actual bytes of the
+path, not the platform's notion of the separator.
+
+> This is a per-loader repeat of the separator pitfall. The other PSF-family
+> plugins that fetch driver libs the same way (AO, HE, HT, NDS, USF via
+> `psfLibFiles`) each carry their own vendored loader; if one surfaces the same
+> "companion not found" symptom on Windows, check its base-path/dirname helper
+> for the identical single-separator assumption before anything else.
