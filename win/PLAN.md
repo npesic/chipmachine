@@ -1063,3 +1063,49 @@ path, not the platform's notion of the separator.
 > `psfLibFiles`) each carry their own vendored loader; if one surfaces the same
 > "companion not found" symptom on Windows, check its base-path/dirname helper
 > for the identical single-separator assumption before anything else.
+
+## 32. Windows beta packaging — self-contained double-clickable ZIP
+
+Goal: ship a ZIP the user unzips and starts by double-clicking `chipmachine.exe`,
+no install, no console window, no separate downloads. Windows counterpart of the
+macOS `package_app.sh`. Implemented as `win/package_win.sh`, run **in the MSYS2
+mingw64 shell** on the build box.
+
+Why a flat folder just works (no bundle machinery like the `.app`):
+- `chipmachine` links `-mwindows` (GUI subsystem, `CMakeLists.txt`), so a
+  double-click launches with **no console window**.
+- On Windows `getAppDir()` returns `getExeDir()` (`file.cpp`), and that is the
+  **last** candidate in the asset search path (`main.cpp`). So `data/`, `lua/`,
+  `music/`, `bin/`, `cert.pem` placed **right next to the exe** are found with
+  zero configuration. Shipped layout:
+  ```
+  ChipMachine/
+    chipmachine.exe   *.dll   cert.pem
+    data/  lua/  music/{Console,hvtc,projectay}/
+    bin/{ffmpeg.exe, ytdlp/{yt-dlp.exe,_internal/}}
+  ```
+
+What the script does, and the non-obvious bits:
+- **DLL closure is discovered, not hard-coded.** This is a MinGW/msvcrt build
+  with a large, build-specific DLL set (libstdc++/libgcc/winpthread, OpenSSL,
+  GLFW/freetype, the whole FFmpeg `libav*` stack linked at `CMakeLists.txt`). The
+  script walks the real tree with `ntldd -R` and copies every DLL that resolves
+  **inside the mingw prefix**, filtering out `C:\Windows` system DLLs
+  (kernel32/opengl32/winmm/ws2_32…) which must NOT be bundled. Needs
+  `pacman -S mingw-w64-x86_64-ntldd`. Re-run packaging whenever link deps change.
+- **Bundled-music collections are mandatory** (`music/Console` .nsfe,
+  `music/hvtc` .prg, `music/projectay` .ay): their DB sources are empty with no
+  network fallback (see `package_app.sh` 4b/4c/4d), so the script hard-fails if
+  any is missing.
+- **Helper tools** per §27: `bin/ffmpeg.exe` (explicit-path invocation) and the
+  yt-dlp **onedir** Windows build `bin/ytdlp/` (`yt-dlp.exe` + `_internal/`) —
+  not the onefile exe (§27 re-extract penalty).
+- **CA bundle** copied to `cert.pem` at the root (`main.cpp` sets
+  `SSL_CERT_FILE`) so HTTPS sources work on a machine with no system certs;
+  needs `mingw-w64-x86_64-ca-certificates`.
+
+Not yet done (optional polish, deferred): embedding an app icon + version
+resource into the exe via `windres` (currently the generic MinGW exe icon); code
+signing (unsigned → SmartScreen "unknown publisher" prompt on first run, which
+the user dismisses once). Neither blocks a beta. Validate by unzipping into a
+**fresh** folder on a clean Windows box (not the build tree) and double-clicking.
