@@ -83,6 +83,10 @@ fi
 [ -f "${EXE_SRC}" ] || { echo "CRITICAL: ${EXE_SRC} not found."; exit 1; }
 
 # 1. Pristine staging dir (guarded delete — see safe_rm_stage).
+# Ensure the dist parent exists first: mkdir -p never deletes, and it lets the
+# guard resolve STAGE_DIR's parent on a clean first run (where win/dist/ is
+# absent).
+mkdir -p "${DIST_DIR}"
 safe_rm_stage "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}"
 
