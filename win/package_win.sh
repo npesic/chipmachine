@@ -26,9 +26,38 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHIPMACHINE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${1:-${CHIPMACHINE_DIR}/builds/release}"
 
+# Staging lives INSIDE the repo under win/dist/ — never as a sibling of the repo.
+# A sibling named "ChipMachine" collides with a repo folder named "chipmachine"
+# on a case-insensitive Windows filesystem, and the `rm -rf` below would then
+# delete the repo itself. Keeping it at a fixed, repo-relative subpath makes the
+# target un-ambiguous (and the guard below refuses anything outside win/dist/).
 STAGE_NAME="ChipMachine"
-STAGE_DIR="${CHIPMACHINE_DIR}/../${STAGE_NAME}"
-ZIP_OUT="${CHIPMACHINE_DIR}/../ChipMachine-win.zip"
+DIST_DIR="${CHIPMACHINE_DIR}/win/dist"
+STAGE_DIR="${DIST_DIR}/${STAGE_NAME}"
+ZIP_OUT="${DIST_DIR}/ChipMachine-win.zip"
+
+# Safety guard: refuse to `rm -rf` anything that is not our dedicated staging
+# dir. Belt-and-braces against a future edit reintroducing a path that resolves
+# to the repo, a parent, or the CWD. Compares resolved parents because STAGE_DIR
+# itself may not exist yet.
+safe_rm_stage() {
+    local target="$1"
+    local parent
+    parent="$(cd "$(dirname "${target}")" 2>/dev/null && pwd -P)" || {
+        echo "CRITICAL: staging parent does not exist; refusing rm."; exit 1; }
+    local resolved="${parent}/$(basename "${target}")"
+    local repo; repo="$(cd "${CHIPMACHINE_DIR}" && pwd -P)"
+    case "${resolved}" in
+        "${repo}/win/dist/"*) : ;;   # the only path we ever delete
+        *) echo "CRITICAL: refusing to rm '${resolved}' (not under win/dist/)."; exit 1 ;;
+    esac
+    # Never delete the repo, an ancestor of it, or the current directory.
+    if [ "${resolved}" = "${repo}" ] || [ "${repo#${resolved}/}" != "${repo}" ] \
+       || [ "${resolved}" = "$(pwd -P)" ]; then
+        echo "CRITICAL: refusing to rm '${resolved}' (repo/ancestor/CWD)."; exit 1
+    fi
+    rm -rf "${resolved}"
+}
 
 EXE_SRC="${BUILD_DIR}/chipmachine.exe"
 
@@ -53,8 +82,8 @@ else
 fi
 [ -f "${EXE_SRC}" ] || { echo "CRITICAL: ${EXE_SRC} not found."; exit 1; }
 
-# 1. Pristine staging dir.
-rm -rf "${STAGE_DIR}"
+# 1. Pristine staging dir (guarded delete — see safe_rm_stage).
+safe_rm_stage "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}"
 
 # 2. The executable.
@@ -148,7 +177,7 @@ fi
 # 8. Zip it (the folder itself is the zip root, so it unzips to ChipMachine/).
 echo "-> Creating ${ZIP_OUT} ..."
 rm -f "${ZIP_OUT}"
-( cd "${CHIPMACHINE_DIR}/.." && zip -r -q "${ZIP_OUT}" "${STAGE_NAME}" )
+( cd "${DIST_DIR}" && zip -r -q "${ZIP_OUT}" "${STAGE_NAME}" )
 
 echo "=== Done: ${ZIP_OUT} ==="
 printf '=== Total packaging time: %dm %02ds ===\n' $((SECONDS / 60)) $((SECONDS % 60))

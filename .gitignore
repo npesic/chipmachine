@@ -34,3 +34,6 @@ __pycache__/
 *.pyo
 *.pyd
 data/python_runtime/
+
+# Windows packaging staging output (win/package_win.sh)
+win/dist/
