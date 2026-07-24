@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdio.h> // TEMP diagnostic probe (blargg_vector OOB), remove with it
 #include <assert.h>
 #include <limits.h>
 
@@ -53,8 +54,22 @@ public:
 		return 0;
 	}
 	void clear() { free( begin_ ); begin_ = nullptr; size_ = 0; }
-	T& operator [] ( size_t n ) const
+	// TEMP diagnostic probe: force this out of line so __builtin_return_address
+	// names the REAL caller (at -O2 it is otherwise inlined and the backtrace /
+	// assert line is misattributed). On an out-of-bounds index it prints n,
+	// size_, the buffer, and the caller's return address, then asserts as
+	// before. Revert this whole method (and the <stdio.h> include above) once
+	// the offending call site is identified.
+	__attribute__((noinline)) T& operator [] ( size_t n ) const
 	{
+		if ( n > size_ )
+		{
+			fprintf( stderr,
+				"\n*** BLARGG_VECTOR OOB: n=%lu size_=%lu begin_=%p caller=%p ***\n",
+				(unsigned long) n, (unsigned long) size_, (const void*) begin_,
+				__builtin_return_address( 0 ) );
+			fflush( stderr );
+		}
 		assert( n <= size_ ); // <= to allow past-the-end value
 		return begin_ [n];
 	}
