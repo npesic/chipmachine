@@ -1788,8 +1788,26 @@ TEST_CASE("secondary files resolve for multi-file fixtures", "[music]")
         INFO(song << "  ->  " << companion);
         auto sec = plugin.getSecondaryFiles(song);
         REQUIRE(std::find(sec.begin(), sec.end(), companion) != sec.end());
+        // Confirm the companion is bundled next to the song, but match its name
+        // CASE-INSENSITIVELY. Two shared UADE banks differ only in case --
+        // Quartet ST's "SMP.set" (qts) and Synth Dream's "smp.set" (sdr) -- and
+        // git cannot hold both names at one path on a case-insensitive checkout
+        // (macOS/Windows), so the repo bundles a single physical file. This is a
+        // FIXTURE-storage limitation only: real streaming still fetches the
+        // exact-cased name getSecondaryFiles() returned (asserted above) from
+        // modland's case-sensitive FTP, and UADE's AmigaDOS file layer resolves
+        // the bank case-insensitively at play time. So here we only need SOME
+        // file of that name to sit next to the song.
         auto dir = utils::path_directory(song);
-        REQUIRE(utils::File{ dir + "/" + companion }.exists());
+        auto want = utils::toLower(companion);
+        bool found = false;
+        for (auto const& f : utils::File{ dir }.listFiles()) {
+            if (utils::toLower(utils::path_filename(f.getName())) == want) {
+                found = true;
+                break;
+            }
+        }
+        REQUIRE(found);
     };
 
     musix::UADEPlugin uade{ "data" };

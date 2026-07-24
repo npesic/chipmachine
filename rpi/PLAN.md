@@ -469,3 +469,28 @@ an OOB read/write), and silencing them would trade a clean abort for silent
 corruption. Plan: keep asserts live as a bring-up safety net through Phase 4,
 fix the real bugs they catch (as with Finding 2), then restore `-DNDEBUG` for the
 shipping build once the corpus is clean. Track remaining asserts as they surface.
+
+### Finding 4 — case-only-differing companion fixtures can't coexist in git
+
+"secondary files resolve for multi-file fixtures" failed at `test.cpp` on
+`qts.Big Pro -> SMP.set`: `File{ "testmus/uade/SMP.set" }.exists()` was false
+because the bundled file is `smp.set` (lower-case). Two *different* shared UADE
+banks differ only in case — Quartet ST's `SMP.set` (`qts`, `UADEPlugin.cpp:805`)
+and Synth Dream's `smp.set` (`sdr`, `:790`, used by the `sdr.monsterbusiness 1`
+fixture). A case-insensitive checkout (macOS/Windows) cannot hold both names at
+one path, so the repo bundles a single physical file; macOS served it to both
+via case-folding, the Pi cannot.
+
+This is a **fixture-storage limitation, not a code bug**: `getSecondaryFiles`
+correctly returns the exact-cased name (needed for modland's case-sensitive FTP),
+and UADE's AmigaDOS file layer resolves the bank case-insensitively at play time,
+so real streaming/playback is fine on Linux. Only the test's host-side
+`utils::File::exists()` was too case-strict.
+
+**Fix:** the fixture-existence assertion now matches the companion name
+**case-insensitively** (lists the song's dir, compares lower-cased). The exact
+name is still asserted against `getSecondaryFiles()` output (unchanged), so GUI
+fetch-name correctness stays covered. Rejected alternatives: a second `SMP.set`
+file (git case-collision on macOS/Windows — the very bug class we're fixing), and
+moving the fixture to a subdir (`testPlugin` skips subdirs, so it would silently
+drop qts from playback coverage).
