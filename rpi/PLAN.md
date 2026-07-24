@@ -366,3 +366,43 @@ Pi to run.
   **off** for the Pi 5.
 - `build.py` gained working `--target raspberry` handling + per-target build
   dirs; `rpi5-aarch64.cmake` was added.
+
+## 12. Phase 4 `cmtest` findings
+
+### Finding 1 — case-sensitive FS: whole-path lower-casing broke content-sniffing
+
+First `cmtest` run on the Pi: 2 of 7 cases failed — "STarKos host path plays
+sound" (`playFile` returned false) and "OPL Archive routes to libvgm and plays"
+(SIGABRT from `Blip_Buffer::end_frame` assert in GME). **Same root cause, in
+shared host code — not aarch64-specific.**
+
+`MusicPlayer::fromFile` (`src/MusicPlayer.cpp`) lower-cased the **entire path**
+before calling each plugin's `canHandle`. That is fine for extension matching,
+but several plugins **sniff file content inside `canHandle`** — they open `name`
+to read magic bytes: `SksPlugin` (`File{name}.readAll()`), and GME's OPL/VSU
+router `vgmNeedsLibVGM()` (`gzopen(path)`, `src/vgm_opl_detect.h`). On a
+**case-sensitive filesystem (Linux/RPi ext4)** the lower-cased path of a
+mixed-case file (`Targhan - Orion Prime - Introduction.sks`,
+`2a03fox - Snowgoons vs Acid (OPL2).vgz`) does not exist:
+- STarKos: the open fails, `SksPlugin` declines, no plugin claims it → silent
+  fail (`playFile` false).
+- OPL: `gzopen` fails so `vgmNeedsLibVGM` returns false, GME **stops declining**
+  the OPL/VSU `.vgz`, claims it, and overflows `Blip_Buffer` → the debug `assert`
+  aborts (masked in Release/NDEBUG, which is why only the Debug `cmtest`
+  crashes; the underlying mis-routing was latent on all case-sensitive builds).
+
+macOS/Windows never saw this because their filesystems are case-insensitive, so
+the lower-cased path still opens the real file.
+
+**Fix:** `fromFile` now lower-cases **only the extension**, preserving the rest
+of the path's real case, so extension matching stays case-insensitive while the
+on-disk path each plugin opens keeps its real case. Strictly better than the old
+behaviour (an upper-case *extension* on a case-sensitive FS was already broken
+for sniffers either way; the common mixed-case *stem* is now fixed).
+`getSecondaryFiles` already passed the original-case name, so only `fromFile`
+needed changing. Cross-platform no-op on case-insensitive filesystems.
+
+> Note on Debug vs Release: GME's `Blip_Buffer`/`Ay_Apu` asserts are live only
+> without NDEBUG. A Release `cmtest` would not have *aborted* on the OPL case —
+> but it would still have mis-routed the file to GME (silent/garbage) instead of
+> libvgm. The Debug build made a latent routing bug loud, which is a feature.

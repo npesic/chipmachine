@@ -9,6 +9,7 @@
 #include <musicplayer/src/plugins/plugins.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <set>
@@ -461,8 +462,31 @@ std::vector<std::string> MusicPlayer::getSecondaryFiles(const std::string& name)
 std::shared_ptr<musix::ChipPlayer>
 MusicPlayer::fromFile(const std::string& file_name)
 {
+    // Lower-case ONLY the extension, never the whole path. Plugins match on a
+    // lower-cased extension, but several also sniff file CONTENT inside
+    // canHandle -- they open `name` to read magic bytes (SksPlugin's
+    // File{name}.readAll(), GME's gzopen() in vgmNeedsLibVGM, ...). Lower-casing
+    // the entire path breaks those opens on a CASE-SENSITIVE filesystem
+    // (Linux/RPi) whenever the real filename has upper-case letters: e.g.
+    // "Targhan - Orion Prime - Introduction.sks" -> the lower-cased path does
+    // not exist, so SksPlugin declines and the tune fails to play, and GME's OPL
+    // detection can't open the file, so GME wrongly claims an OPL/VSU .vgz and
+    // aborts in Blip_Buffer. macOS/Windows hid this (case-insensitive FS).
+    // Normalising just the extension keeps extension matching case-insensitive
+    // while the on-disk path each plugin opens keeps its real case. (fromFile()
+    // below is already called with the original-case file_name.)
     auto name = file_name;
-    utils::makeLower(name);
+    {
+        auto slash = name.find_last_of("/\\");
+        auto dot = name.find_last_of('.');
+        if (dot != std::string::npos &&
+            (slash == std::string::npos || dot > slash)) {
+            for (size_t i = dot + 1; i < name.size(); ++i) {
+                name[i] = static_cast<char>(
+                    ::tolower(static_cast<unsigned char>(name[i])));
+            }
+        }
+    }
     check_silence = true;
     //LOGD("Finding plugin for '%s' (%s)", file_name, name);
     for (auto& plugin : musix::ChipPlugin::getPlugins()) {
