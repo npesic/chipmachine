@@ -89,11 +89,20 @@ blargg_err_t Sgc_Impl::start_track( int track )
 	{
 		vectors_addr = 0x10000 - Sgc_Cpu::page_size;
 		idle_addr = vectors_addr;
+		// RST vectors 0x08..0x38 (i=1..7) come from rst_addrs entries 0..6.
+		// header_.rst_addrs is byte[7*2], so the entry for vector i is at
+		// (i-1)*2. The original [i*2] indexing skipped entry 0 and read
+		// rst_addrs[14]/[15] -- 2 bytes out of bounds at i=7. That out-of-bounds
+		// read is undefined behaviour; GCC 12 on aarch64 -O2 miscompiled this
+		// loop as a result (the trip count ran away to i=129, writing
+		// vectors[1032] past the 1028-byte page and aborting in blargg_vector::
+		// operator[]). Correcting the index removes the UB and populates the
+		// RST vectors from the right header entries on every platform.
 		for ( int i = 1; i < 8; ++i )
 		{
 			vectors [i*8 + 0] = 0xC3; // JP addr
-			vectors [i*8 + 1] = header_.rst_addrs [i*2 + 0];
-			vectors [i*8 + 2] = header_.rst_addrs [i*2 + 1];
+			vectors [i*8 + 1] = header_.rst_addrs [(i-1)*2 + 0];
+			vectors [i*8 + 2] = header_.rst_addrs [(i-1)*2 + 1];
 		}
 		
 		cpu.map_mem( 0xC000, 0x2000, ram.begin() );
