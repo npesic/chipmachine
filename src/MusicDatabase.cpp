@@ -3030,7 +3030,7 @@ void initFormats()
     // -----------------------------------------------------------------------
     // Classic module trackers. MOD is Amiga; XM/IT/S3M are the IBM PC/DOS
     // trackers (FastTracker II / Impulse Tracker / Scream Tracker), which live
-    // in the dedicated "IBM PC Trackers" filter (see ChipMachine::filterOptions).
+    // in the dedicated "IBM PC Trackers" filter (see platformFilterOptions).
     format_map["mod"] = PROTRACKER;        // Amiga ProTracker module
     format_map["xm"] = FASTTRACKER;        // FastTracker II
     format_map["it"] = IMPULSETRACKER;     // Impulse Tracker
@@ -3708,7 +3708,7 @@ static uint8_t formatToByte(std::string const& fmt, std::string const& path,
 }
 
 // Human-readable platform name for a format byte, used by describeFormat().
-// Mirrors the TAB platform filters (see ChipMachine::filterOptions).
+// Mirrors the TAB platform filters (see platformFilterOptions).
 static std::string platformName(uint8_t b)
 {
     switch (b) {

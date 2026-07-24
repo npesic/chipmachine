@@ -90,91 +90,9 @@ static std::vector<image::bitmap> decodeLogosParallel(
     return out;
 }
 
-const std::vector<FilterOption> ChipMachine::filterOptions = {
-    { "[no filter, search all]", {} },
-    { "Amiga", { AMIGA, PROTRACKER, SOUNDTRACKER, UADE, TRACKER } },
-    // Children in chronological order (VCS 1977 first), not by corpus size.
-    // "Atari" is the house logo (Atari.png) for the group row itself.
-    { "Atari", {}, {
-        { "Atari VCS Console", { ATARIVCS } },
-        { "Atari 8bit Computers (XL/XE)", { POKEY } },
-        { "Atari 7800 Console", { ATARI7800 } },
-        { "Atari ST/STE/TT", { ATARI } },
-        { "Atari Falcon", { ATARIFALCON } },
-        { "Atari Lynx", { ATARILYNX } },
-        { "Atari Jaguar", { ATARIJAGUAR } },
-    }, "Atari" },
-    { "Commodore 64 (SID)", { SID, STR } },
-    { "Commodore 16/116/+4 (TED)", { PRG } },
-    { "Commodore VIC-20", { VIC20 } },
-    { "ZX Spectrum 16K/48K (Beeper)", { ZXBEEPER } },
-    { "ZX Spectrum 128K (AY)", { ZXAY, SPECTRUM } },
-    { "IBM PC (Trackers/DAWs)", { FASTTRACKER, IMPULSETRACKER, SCREAMTRACKER, PCTRACKER, PC } },
-    { "IBM PC (AdLib/OPL)", { ADPLUG } },
-    { "MSX", { MSX } },
-    { "Amstrad CPC", { AMSTRAD } },
-    { "Sam Coupe", { SAMCOUPE } },
-    { "Acorn Archimedes", { ACORN } },
-    { "Apple", {}, {
-        { "Original Apple Mac", { APPLEMAC } },
-        { "Apple IIGS", { APPLE } },
-        { "Mac OS", { MACOS } },
-        { "iOS", { IOS } },
-    }, "Apple" },
-    { "Sony", {}, {
-        { "Sony PlayStation 1/2", { PLAYSTATION, PLAYSTATION2 } },
-        { "Sony PlayStation 3", { PS3 } },
-        { "Sony PSP", { PSP } },
-    }, "Sony" },
-    { "Nintendo", {}, {
-        { "Nintendo NES", { NES } },
-        { "Nintendo SNES", { SNES } },
-        { "Nintendo GameBoy/GBA", { GAMEBOY, GBA } },
-        { "Nintendo 64", { NINTENDO64 } },
-        { "Nintendo DS", { NDS } },
-        { "Nintendo 3DS", { N3DS } },
-        { "Nintendo GameCube", { GAMECUBE } },
-        { "Nintendo Wii", { WII } },
-        { "Nintendo Virtual Boy", { VIRTUALBOY } },
-    }, "Nintendo" },
-    { "Microsoft", {}, {
-        { "Microsoft Xbox", { XBOX } },
-        { "Microsoft Xbox 360", { XBOX360 } },
-    }, "Microsoft" },
-    { "Sega", {}, {
-        { "Sega 8bit", { SEGAMS } },
-        { "Sega 16bit/32X/Saturn", { SEGA, MEGADRIVE, SATURN } },
-        { "Sega Dreamcast", { DREAMCAST } },
-    }, "Sega" },
-    { "Japanese Computers", {}, {
-        { "PC-98", { JPFM } },
-        { "X68000", { JPX68000 } },
-        { "FM Towns", { JPFMTOWNS } },
-    }, "Japanese Computers" },
-    { "PC Engine/TurboGrafx-16", { HES } },
-    { "WonderSwan", { WONDERSWAN } },
-    { "Neo Geo Pocket", { NEOGEOPOCKET } },
-    { "Arcade", { ARCADE } },
-    // "Other" is too generic a byte-slug to outrank a specific ext logo
-    // elsewhere (see platformSlugForByte's specificPlatform check), so this
-    // group-less leaf row still needs its own explicit logo, same as the
-    // three rows below.
-    { "Other Platforms", { OTHER }, {}, "Other" },
-    // Rendered audio with no hardware identity: BotB allgear/remix/wildchip/
-    // fakebit compos, standalone demoscene MP3s, untagged chipmusic.org tracks.
-    // Not "unclassified" -- the source itself declares no platform.
-    // MP3/OGG/Radio/Podcast are "nonHardware" in platformSlugForByte, so their
-    // byte resolves to no slug at all -- these rows need an explicit `logo` or
-    // the TAB filter screen shows nothing when they're highlighted.
-    { "MP3/OGG (no platform)", { MP3, OGG }, {}, "MP3-OGG" },
-    // No "YouTube (no platform)" row: a capture whose pouet tag names no
-    // hardware (Animation/Video, mIRC, Alambik, Wild, JavaScript, ...) resolves
-    // to OTHER, so it lands in the Other Platforms drill alongside the
-    // "Youtube (Wild)" / "Youtube (JavaScript)" groups that already live there.
-    // The YOUTUBE byte is consequently never produced (see formatToByte).
-    { "Podcasts", { PODCAST }, {}, "Podcasts" },
-    { "Radio Stations", { RADIO }, {}, "Radio" }
-};
+// The platform (TAB) filter tree now lives in PlatformFilters.cpp (as the free
+// symbol `platformFilterOptions`) so both this GUI and the text-mode front end
+// can share it; see PlatformFilters.h.
 
 // Base color for a format byte. Shared by the now-playing list (renderSong)
 // and the TAB filter screen so platforms keep a consistent color everywhere.
@@ -636,7 +554,7 @@ ChipMachine::ChipMachine(utils::path const& wd, RemoteLoader& rl,
     // index (down the left column, then down the right). visibleItems is set to
     // the item count so the list renders every entry (and never scrolls).
     advancedList = VerticalList(
-        listrec, (int)filterOptions.size(),
+        listrec, (int)platformFilterOptions.size(),
         [=](grappix::Rectangle& rec, int y, uint32_t index, bool hilight) {
             auto const& opts = currentFilterOptions();
             if (index >= opts.size()) return;
@@ -747,8 +665,8 @@ ChipMachine::ChipMachine(utils::path const& wd, RemoteLoader& rl,
             grappix::screen.text(listFont, label, px, py, c,
                                  resultFieldTemplate.scale * 0.9f);
         });
-    advancedList.setTotal(filterOptions.size());
-    advancedList.setVisible((int)filterOptions.size());
+    advancedList.setTotal(platformFilterOptions.size());
+    advancedList.setVisible((int)platformFilterOptions.size());
     advancedList.setArea(advancedArea); // match the layout area (scissor clip)
     advancedScreen.add(&advancedList);
 
@@ -1754,7 +1672,7 @@ void ChipMachine::loadSplashScreenshots()
         // bare corporate mark adds nothing to a hardware showcase.
         "Microsoft", "Apple", "Sony", "SEGA", "Nintendo", "Atari",
         // Media/category buckets, not hardware (TAB filter house logos --
-        // see filterOptions). "MP3-OGG"/"Radio"/"Podcasts" don't overlap
+        // see platformFilterOptions). "MP3-OGG"/"Radio"/"Podcasts" don't overlap
         // splashExcludeExtensions ("mp3"/"ogg" there are ext-shot keys, these
         // are platform-shot keys).
         "MP3-OGG", "Radio", "Podcasts",
@@ -2172,7 +2090,7 @@ void ChipMachine::loadPlatformScreenshots()
              (int)missing.size(), dir.string(), list);
     }
 
-    // Explicit house logos on top-level filterOptions rows (Atari.png,
+    // Explicit house logos on top-level platformFilterOptions rows (Atari.png,
     // Nintendo.png, ..., plus the platformless MP3-OGG/Radio/Podcasts/Other
     // rows -- see FilterOption::logo). Groups fall back to borrowing their
     // first child's logo when missing; the platformless leaf rows have no
@@ -2180,7 +2098,7 @@ void ChipMachine::loadPlatformScreenshots()
     // are still reported, or a row nobody drew art for would silently stay
     // blank (or keep wearing one machine's face).
     std::vector<std::string> missingGroup;
-    for (auto const& opt : filterOptions)
+    for (auto const& opt : platformFilterOptions)
         if (!opt.logo.empty() && !findPlatformShot(opt.logo))
             missingGroup.push_back(opt.logo);
     if (!missingGroup.empty()) {
@@ -2413,9 +2331,9 @@ void ChipMachine::computeFilterCounts()
     arcadePlatformCount = musicDatabase.getArcadePlatformCount();
     filterByteCounts = counts;
     filterTotalCount = total;
-    filterCounts.assign(filterOptions.size(), 0);
-    for (size_t i = 0; i < filterOptions.size(); i++)
-        filterCounts[i] = filterOptionCount(filterOptions[i]);
+    filterCounts.assign(platformFilterOptions.size(), 0);
+    for (size_t i = 0; i < platformFilterOptions.size(); i++)
+        filterCounts[i] = filterOptionCount(platformFilterOptions[i]);
 }
 
 // Tune count for a filter option: the grand total for the "[Show All]" entry

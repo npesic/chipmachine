@@ -2,6 +2,7 @@
 
 #include "MusicDatabase.h"
 #include "MusicPlayerList.h"
+#include "PlatformFilters.h"
 #include "RemoteLoader.h"
 
 #include <coreutils/utils.h>
@@ -197,13 +198,49 @@ public:
     }
     void setPluginFilter(int gid) { mdb.setPluginFilter(gid); }
 
-    // Drop whichever of the three (mutually exclusive) filters is active.
-    void clearSearchFilter()
+    // Platform filter (the GUI's first TAB screen). Restrict search to songs
+    // whose format byte is in `allowedFormats`; the same mutually-exclusive slot
+    // as the three above, so this also drops them. Pass {} to clear.
+    void setFormatFilter(std::vector<uint8_t> const& allowedFormats)
     {
-        mdb.setExtensionFilter(-1);
-        mdb.setDatabaseFilter(-1);
-        mdb.setPluginFilter(-1);
+        mdb.setFormatFilter(allowedFormats);
     }
+
+    // The platform tree (PlatformFilters.h) flattened for a linear text list: a
+    // selectable row per leaf, plus one per group (applying the union of its
+    // children) with its children following as `child` (indent) rows. The
+    // "[no filter]" head entry is omitted -- the caller supplies its own reset
+    // row. Apply an entry's `formats` via setFormatFilter().
+    struct PlatformEntry
+    {
+        std::string label;
+        std::vector<uint8_t> formats;
+        bool child; // true => a group child, render indented
+    };
+    std::vector<PlatformEntry> platformFilterEntries() const
+    {
+        std::vector<PlatformEntry> out;
+        for (auto const& opt : platformFilterOptions) {
+            if (opt.matchedFormats.empty() && opt.children.empty())
+                continue; // the "[no filter, search all]" head row
+            if (!opt.children.empty()) {
+                std::vector<uint8_t> uni;
+                for (auto const& ch : opt.children)
+                    uni.insert(uni.end(), ch.matchedFormats.begin(),
+                               ch.matchedFormats.end());
+                out.push_back({ opt.name, uni, false });
+                for (auto const& ch : opt.children)
+                    out.push_back({ ch.name, ch.matchedFormats, true });
+            } else {
+                out.push_back({ opt.name, opt.matchedFormats, false });
+            }
+        }
+        return out;
+    }
+
+    // Drop whichever of the four (mutually exclusive) filters is active. An
+    // empty format filter resets the shared title-index slot, clearing all four.
+    void clearSearchFilter() { mdb.setFormatFilter({}); }
 
     [[nodiscard]] bool dbBusy() const { return mdb.busy(); }
     [[nodiscard]] bool isReindexing() const { return mdb.isReindexing(); }

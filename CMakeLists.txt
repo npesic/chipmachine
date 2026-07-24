@@ -344,6 +344,7 @@ endif()
 # Source file layout declarations
 set(MAIN_FILES
     src/MusicDatabase.cpp
+    src/PlatformFilters.cpp
     src/GZPlugin.cpp
     src/LhaArchive.cpp
     src/MusicPlayer.cpp

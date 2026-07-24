@@ -45,9 +45,11 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     // three DB filters are mutually exclusive (they share one slot in the
     // engine), so activeFilterLabel names whichever is currently applied.
     TextListView filterView(*console, height - 6, width);
-    enum { FS_SEARCH = 0, FS_FORMAT, FS_DATABASE, FS_PLUGIN, FS_COUNT };
+    enum { FS_SEARCH = 0, FS_PLATFORM, FS_FORMAT, FS_DATABASE, FS_PLUGIN, FS_COUNT };
     int filterScreen = FS_SEARCH;
     std::string activeFilterLabel;
+    // The platform tree is static, so flatten it once for the Platforms screen.
+    auto platformEntries = ci.platformFilterEntries();
 
     SongInfo info{};
 
@@ -112,8 +114,15 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     // screen is active.
     filterView.setCallback([&](Console& c, int index, bool marked) {
         std::string text;
+        bool isGroup = false;
         if (index == 0) {
             text = "[ no filter ]";
+        } else if (filterScreen == FS_PLATFORM) {
+            if (index - 1 < (int)platformEntries.size()) {
+                auto const& p = platformEntries[index - 1];
+                text = (p.child ? "    " : "") + p.label;
+                isGroup = !p.child; // top-level rows (leaves + group heads)
+            }
         } else if (filterScreen == FS_FORMAT) {
             auto const& g = ci.extensionGroups();
             if (index - 1 < (int)g.size()) {
@@ -142,7 +151,8 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
         if (marked)
             c.put(text, Console::WHITE, Console::BLUE);
         else
-            c.put(text, Console::LIGHT_GREY, Console::CURRENT_COLOR);
+            c.put(text, isGroup ? Console::WHITE : Console::LIGHT_GREY,
+                  Console::CURRENT_COLOR);
     });
 
     std::string lastLine;
@@ -158,6 +168,7 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     // ---- Filter-screen helpers (TAB) ------------------------------------
     auto filterRowCount = [&]() -> int {
         switch (filterScreen) {
+        case FS_PLATFORM: return 1 + (int)platformEntries.size();
         case FS_FORMAT: return 1 + (int)ci.extensionGroups().size();
         case FS_DATABASE: return 1 + (int)ci.databaseGroups().size();
         case FS_PLUGIN: return 1 + (int)ci.pluginGroups().size();
@@ -166,6 +177,7 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     };
     auto screenTitle = [&]() -> std::string {
         switch (filterScreen) {
+        case FS_PLATFORM: return "PLATFORM FILTER";
         case FS_FORMAT: return "FORMAT FILTER";
         case FS_DATABASE: return "DATABASE FILTER";
         case FS_PLUGIN: return "PLUGIN FILTER";
@@ -207,6 +219,11 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
         activeFilterLabel = "";
         if (idx <= 0) {
             ci.clearSearchFilter();
+        } else if (filterScreen == FS_PLATFORM) {
+            if (idx - 1 < (int)platformEntries.size()) {
+                ci.setFormatFilter(platformEntries[idx - 1].formats);
+                activeFilterLabel = platformEntries[idx - 1].label;
+            }
         } else if (filterScreen == FS_FORMAT) {
             auto const& g = ci.extensionGroups();
             if (idx - 1 < (int)g.size()) {
