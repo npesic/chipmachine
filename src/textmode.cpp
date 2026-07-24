@@ -17,6 +17,27 @@ void initYoutube(sol::state&);
 
 namespace chipmachine {
 
+// Flatten a possibly multi-line song comment into a single ticker line: turn
+// newlines/tabs into spaces, collapse runs of whitespace, and trim the ends.
+// (The GUI's compressWhitespace lives in a GUI-only TU, so cm reimplements it.)
+static std::string compressWs(const std::string& in)
+{
+    std::string out;
+    out.reserve(in.size());
+    bool prevSpace = false;
+    for (char c : in) {
+        if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+        bool sp = (c == ' ');
+        if (sp && prevSpace) continue;
+        out += c;
+        prevSpace = sp;
+    }
+    auto a = out.find_first_not_of(' ');
+    if (a == std::string::npos) return "";
+    auto b = out.find_last_not_of(' ');
+    return out.substr(a, b - a + 1);
+}
+
 void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
 {
     using namespace bbs;
@@ -36,7 +57,10 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     console->fill(bgColor, 0, 1, width, 1);
     console->moveCursor(0, 2);
     console->setColor(Console::WHITE, Console::BLACK);
-    TextListView listView(*console, height - 6, width);
+    // The results/filter lists are one row shorter than the window's usable
+    // height leaves room for: they give up row (height-5) to the song-message
+    // scroller (drawn just above the TITLE/AUTHOR/FORMAT block).
+    TextListView listView(*console, height - 7, width);
 
     // Filter overlay: TAB cycles through the same filter dimensions the GUI
     // exposes -- Formats, Databases, Plugins -- each drawn as a selectable list
@@ -44,7 +68,7 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     // listView; only one is shown at a time (filterScreen picks which). The
     // three DB filters are mutually exclusive (they share one slot in the
     // engine), so activeFilterLabel names whichever is currently applied.
-    TextListView filterView(*console, height - 6, width);
+    TextListView filterView(*console, height - 7, width);
     enum { FS_SEARCH = 0, FS_PLATFORM, FS_FORMAT, FS_DATABASE, FS_PLUGIN, FS_COUNT };
     int filterScreen = FS_SEARCH;
     std::string activeFilterLabel;
@@ -52,6 +76,25 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     auto platformEntries = ci.platformFilterEntries();
 
     SongInfo info{};
+
+    // Song-message scroller (one line, just above the now-playing block). Many
+    // module files carry an embedded comment/greeting; the GUI ping-pongs it in
+    // a graphical scroller, here it marquees across one text row.
+    int scrollRow = height - 5;
+    const std::string scrollGap = "     ***     ";
+    std::string scrollText;
+    int scrollPos = 0;
+    auto drawScrollLine = [&]() {
+        console->fill(bgColor, 0, scrollRow, width, 1);
+        if (scrollText.empty()) return;
+        std::string t = scrollText + scrollGap;
+        int n = (int)t.size();
+        std::string line;
+        line.reserve(width);
+        for (int i = 0; i < width; i++)
+            line += t[(scrollPos + i) % n];
+        console->put(0, scrollRow, line, Console::LIGHT_GREEN, bgColor);
+    };
 
     auto holder = ci.onMeta([&](const SongInfo& si) {
         info = si;
@@ -64,6 +107,16 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
                      Console::CURRENT_COLOR, bgColor);
         console->put(0, height - 2, utils::format("FORMAT: %s", si.format),
                      Console::CURRENT_COLOR, bgColor);
+        // Rebuild the scroll message for the new song: prefer the DB INFO field,
+        // else the module's embedded "message" comment -- same source order the
+        // GUI scroller uses.
+        std::string msg = (si.metadata.size() > SongInfo::INFO)
+                              ? si.metadata[SongInfo::INFO]
+                              : std::string();
+        if (msg.empty()) msg = ci.getMeta("message");
+        scrollText = compressWs(msg);
+        scrollPos = 0;
+        drawScrollLine();
         console->flush();
     });
 
@@ -201,12 +254,12 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
         filterView.setLength(filterRowCount());
         filterView.select(0);
         drawStatusBar();
-        console->fill(Console::BLACK, 0, 2, width, height - 6);
+        console->fill(Console::BLACK, 0, 2, width, height - 7);
         filterView.refresh();
     };
     auto enterSearchScreen = [&]() {
         drawStatusBar();
-        console->fill(Console::BLACK, 0, 2, width, height - 6);
+        console->fill(Console::BLACK, 0, 2, width, height - 7);
         listView.refresh();
         console->fill(Console::BLACK, 0, 0, width, 1);
         console->put(0, 0, "#", Console::WHITE);
@@ -255,6 +308,16 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
         filterScreen = FS_SEARCH;
     };
 
+    // Advance the message marquee one step and redraw it. Returns whether it
+    // drew anything (so the caller can decide to flush).
+    auto tickScroll = [&]() -> bool {
+        if (scrollText.empty()) return false;
+        int n = (int)(scrollText.size() + scrollGap.size());
+        scrollPos = (scrollPos + 1) % n;
+        drawScrollLine();
+        return true;
+    };
+
     drawStatusBar();
     console->flush();
 
@@ -293,6 +356,7 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
                 if (filterView.putKey(k)) filterView.refresh();
             } else {
                 ci.update();
+                tickScroll();
             }
             console->flush(true);
             continue;
@@ -358,6 +422,7 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
             }
         } else {
             ci.update();
+            if (tickScroll()) doFlush = true;
             int s = ci.seconds();
             if (s != olds) {
                 auto state = ci.playing() ? "PLAYING" : " PAUSED";
