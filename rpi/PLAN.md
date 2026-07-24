@@ -556,3 +556,30 @@ is `__LITTLE_ENDIAN__` (trailing `__`, Apple-style) — distinct from glibc's
 other "works on Apple's compiler, undefined elsewhere" macro gaps in vendored
 Mac-origin code; on a hypothetical big-endian target the swap is now also correct
 (it was effectively unreachable before).
+
+### Finding 7 — cmtest hangs at exit: Furnace (DMF) log thread never stopped
+
+`cmtest` finished the suite (the `coverage` gate reported its result) but never
+returned to the shell — it hung on teardown. `gdb -p <pid> -ex 'thread apply all
+bt'` showed it exactly (ffmpeg was a red herring): the **main thread** was in
+`exit()` → `__run_exit_handlers` → `pthread_cond_destroy(logFileNotify)`, blocked,
+while **thread 2** sat in `_logFileThread()`
+(`dmfplugin/furnace/src/log.cpp:202`), parked in `logFileNotify.wait()`.
+
+Furnace's async log-writer is started by `startLogFile()` inside
+`DivEngine::preInit()` (`engine.cpp:4314`) — which the DMF plugin calls per song.
+Its counterpart `finishLogFile()` (stops the flag, notifies, joins) is **never
+called**: the standalone Furnace app calls it from `main()`, but embedded in the
+plugin nothing does — `DivEngine::quit()` doesn't touch the log, and
+`DMFPlayer`'s ctor can even throw *after* `preInit()` started the thread. Left
+running, the thread stays parked on the global `logFileNotify` condvar; at exit
+its static destructor calls `pthread_cond_destroy()` on a condvar that still has
+a waiter — POSIX-UB, and glibc blocks forever → whole-process teardown hang.
+
+**Fix:** in `startLogFile()` (`log.cpp`), register an `atexit` handler (once)
+that calls `finishLogFile()`. An `atexit` registered at runtime runs **before**
+the startup-constructed condvar's static destructor, so the thread is joined
+first and the condvar is destroyed with no waiters. Robust to every path
+(success, ctor-throw, N songs) since it fires once at exit regardless of whether
+`quit()` ran; `finishLogFile()` is a no-op if already done. Not ffmpeg-related —
+the ffmpeg teardown (`ExecPipe::Kill` SIGKILL+reap) was examined and is clean.

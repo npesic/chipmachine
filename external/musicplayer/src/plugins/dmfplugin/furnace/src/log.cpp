@@ -21,6 +21,7 @@
 #include "fileutils.h"
 #include <thread>
 #include <condition_variable>
+#include <cstdlib>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -243,6 +244,22 @@ bool startLogFile(const char* path) {
   logFileAvail=true;
 
   logFileThread=new std::thread(_logFileThread);
+
+  // Stop this thread at process exit, BEFORE the global logFileNotify
+  // condition_variable is destroyed. In the standalone Furnace app main() calls
+  // finishLogFile(); but when DivEngine is embedded (chipmachine's DMF plugin)
+  // nothing reliably does -- DMFPlayer's ctor can throw after preInit() started
+  // this thread, and quit() never touches the log. Left running, the thread
+  // stays parked in logFileNotify.wait() and at exit ~condition_variable() ->
+  // pthread_cond_destroy() blocks forever on that waiter (whole process hangs on
+  // teardown). An atexit handler registered here at runtime runs before the
+  // startup-constructed condvar's static destructor, so finishLogFile() joins
+  // the thread first. Register once; finishLogFile() is a no-op if already done.
+  static bool atexitRegistered=false;
+  if (!atexitRegistered) {
+    atexitRegistered=true;
+    atexit([]{ finishLogFile(); });
+  }
   return true;
 }
 
