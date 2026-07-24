@@ -371,6 +371,20 @@ Pi to run.
 
 ## 12. Phase 4 `cmtest` findings
 
+**Status (2026-07-24): `cmtest` is GREEN on the Pi 5** — full `[music]` corpus
+passes, coverage gate `g_errors == 0`, clean exit (no teardown hang). Nine
+findings below, spanning: case-sensitivity on Linux's case-sensitive FS
+(Findings 1, 4, 8 — the dominant class), a GCC-vs-AppleClang endian-macro gap
+(6), a genuine GCC/aarch64 `-O2` miscompile from vendored UB (2), an exit-hang
+thread leak (7), a missing prebuilt blob (5), and a test-harness budget fix (9).
+
+Two deliberate follow-ups remain open (details in Findings 2/3): **(a)** restore
+`-DNDEBUG` for the shipping Release build now that the live asserts it exposed
+are fixed; **(b)** re-run `cmtest` on **macOS/Ubuntu** to confirm the shared-code
+fixes (`MusicPlayer::fromFile` extension-only lower-casing, `MADDefs.h` endian
+derivation, the `testPlugin` split budget, `AOPlugin` case-insensitive lookup)
+did not shift the baseline there.
+
 ### Finding 1 — case-sensitive FS: whole-path lower-casing broke content-sniffing
 
 First `cmtest` run on the Pi: 2 of 7 cases failed — "STarKos host path plays
