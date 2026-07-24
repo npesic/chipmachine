@@ -60,16 +60,30 @@ extern "C"
         uint32 size = 0;
         FILE* auxfile = nullptr;
 
-        std::string fullName;
-        if (!baseDir.empty()) {
-            fullName = baseDir + "/" + utils::toLower(filename);
-        } else {
-            fullName = utils::toLower(filename);
-        }
-
+        // Resolve the companion (the .qsflib/.ssflib/... named by the PSF "_lib"
+        // tag) CASE-INSENSITIVELY. The tag's case and the on-disk file's case
+        // need not agree -- rips are inconsistent (some tags are upper-case,
+        // some mixed; the archives store either) -- and the old code blindly
+        // lower-cased the tag, which only resolves on a case-insensitive FS. On
+        // Linux/RPi that fails whenever the real file has upper-case letters
+        // (e.g. "Mega Man - The Power Battle.qsflib"), so qsf_start/ssf_start
+        // fail and the player throws an (empty) exception. Try the exact tag
+        // name first, then scan the directory for a case-insensitive match.
+        std::string dir = baseDir.empty() ? std::string(".") : baseDir;
+        std::string fullName = dir + "/" + filename;
         auxfile = fopen(fullName.c_str(), "rb");
         if (auxfile == nullptr) {
-            printf("Unable to find auxiliary file %s\n", fullName.c_str());
+            std::string wantLower = utils::toLower(std::string(filename));
+            for (auto const& f : utils::File(dir).listFiles()) {
+                if (utils::toLower(utils::path_filename(f.getName())) ==
+                    wantLower) {
+                    auxfile = fopen(f.getName().c_str(), "rb");
+                    break;
+                }
+            }
+        }
+        if (auxfile == nullptr) {
+            printf("Unable to find auxiliary file %s\n", filename);
             return AO_FAIL;
         }
 

@@ -583,3 +583,29 @@ first and the condvar is destroyed with no waiters. Robust to every path
 (success, ctor-throw, N songs) since it fires once at exit regardless of whether
 `quit()` ran; `finishLogFile()` is a no-op if already done. Not ffmpeg-related —
 the ffmpeg teardown (`ExecPipe::Kill` SIGKILL+reap) was examined and is clean.
+
+### Finding 8 — Audio Overload: `_lib` companion lower-cased, unfindable on Linux
+
+`testmus/ao/01 - title.miniqsf` threw an empty `player_exception()` — a
+`.miniqsf` (Capcom QSF; PSF-family "mini + shared `.qsflib`", like §31's GSF).
+`AOPlugin`'s `ao_get_lib()` loads the companion named by the PSF `_lib` tag but
+**lower-cased the name** (`baseDir + "/" + toLower(filename)`). The tag case and
+the on-disk case disagree, inconsistently, across rips:
+
+| fixture | `_lib` tag | on disk | old `toLower` |
+|---|---|---|---|
+| `01 - title` | `Mega Man - The Power Battle.qsflib` | mixed | miss → **fail** |
+| `01 - opening` | `Mega Man 2 - The Power Fighters.qsflib` | lower | match |
+| `pdz-06.minissf` | `EPISODE2.ssflib` | lower | match |
+
+So blind lower-case only works on a case-insensitive FS; on Linux it fails
+whenever the real file has upper-case letters (the `title` fixture), and neither
+lower-case *nor* exact-case satisfies all three, because the fixtures themselves
+are inconsistent.
+
+**Fix:** `ao_get_lib` now resolves the companion **case-insensitively** — tries
+the exact tag name, then scans the directory for a case-insensitive filename
+match. Handles any tag/disk case combination and is robust for real
+streaming (the fetched file keeps whatever case the archive used). Same
+case-sensitivity theme as Findings 1/4 and §31; `.qsflib`/`.ssflib` companions
+now load on Linux/RPi.
