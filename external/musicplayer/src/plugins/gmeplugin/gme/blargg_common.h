@@ -33,6 +33,23 @@
 	typedef const char* blargg_err_t;
 #endif
 
+// TEMP diagnostic probe: cold out-of-line reporter for blargg_vector::operator[]
+// bounds failures. Kept OUT of operator[] (which stays inlinable) so the hot
+// path's -O2 codegen is identical to the original assert -- the OOB is
+// inlining-sensitive and vanishes if operator[] itself is made noinline. Because
+// this helper is the only out-of-line call on the failure path, and operator[]
+// is inlined into its caller, __builtin_return_address(0) here resolves to the
+// REAL calling site. Revert this and the <stdio.h> include once identified.
+[[gnu::cold, gnu::noinline]] inline void blargg_vector_oob_(
+	unsigned long n, unsigned long size_, const void* begin_)
+{
+	fprintf( stderr,
+		"\n*** BLARGG_VECTOR OOB: n=%lu size_=%lu begin_=%p caller=%p ***\n",
+		n, size_, begin_, __builtin_return_address( 0 ) );
+	fflush( stderr );
+	abort();
+}
+
 // blargg_vector - very lightweight vector of POD types (no constructor/destructor)
 template<class T>
 class blargg_vector {
@@ -54,23 +71,16 @@ public:
 		return 0;
 	}
 	void clear() { free( begin_ ); begin_ = nullptr; size_ = 0; }
-	// TEMP diagnostic probe: force this out of line so __builtin_return_address
-	// names the REAL caller (at -O2 it is otherwise inlined and the backtrace /
-	// assert line is misattributed). On an out-of-bounds index it prints n,
-	// size_, the buffer, and the caller's return address, then asserts as
-	// before. Revert this whole method (and the <stdio.h> include above) once
-	// the offending call site is identified.
-	__attribute__((noinline)) T& operator [] ( size_t n ) const
+	// TEMP diagnostic probe: hot path stays identical to the original
+	// `assert(n <= size_)` (a compare + branch to a cold out-of-line routine),
+	// so operator[] remains inlinable and the -O2 codegen that triggers the OOB
+	// is preserved -- while blargg_vector_oob_() reports n/size_/begin_/caller.
+	// Revert to `assert( n <= size_ ); return begin_[n];` once identified.
+	T& operator [] ( size_t n ) const
 	{
-		if ( n > size_ )
-		{
-			fprintf( stderr,
-				"\n*** BLARGG_VECTOR OOB: n=%lu size_=%lu begin_=%p caller=%p ***\n",
-				(unsigned long) n, (unsigned long) size_, (const void*) begin_,
-				__builtin_return_address( 0 ) );
-			fflush( stderr );
-		}
-		assert( n <= size_ ); // <= to allow past-the-end value
+		if ( __builtin_expect( n > size_, 0 ) ) // <= allowed (past-the-end value)
+			blargg_vector_oob_( (unsigned long) n, (unsigned long) size_,
+			                    (const void*) begin_ );
 		return begin_ [n];
 	}
 };
