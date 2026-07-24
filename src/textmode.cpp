@@ -81,18 +81,22 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     // module files carry an embedded comment/greeting; the GUI ping-pongs it in
     // a graphical scroller, here it marquees across one text row.
     int scrollRow = height - 5;
-    const std::string scrollGap = "     ***     ";
     std::string scrollText;
     int scrollPos = 0;
+    // Marquee: the text starts fully off the right edge (blank line) and slides
+    // left. scrollPos is how far it has moved; the text's left edge sits at
+    // column (width - scrollPos). Once it has fully exited on the left the line
+    // is blank again and it re-enters from the right (see tickScroll's wrap).
     auto drawScrollLine = [&]() {
         console->fill(bgColor, 0, scrollRow, width, 1);
         if (scrollText.empty()) return;
-        std::string t = scrollText + scrollGap;
-        int n = (int)t.size();
-        std::string line;
-        line.reserve(width);
-        for (int i = 0; i < width; i++)
-            line += t[(scrollPos + i) % n];
+        int textLen = (int)scrollText.size();
+        int x = width - scrollPos; // left edge of the text on screen
+        std::string line(width, ' ');
+        for (int c = 0; c < width; c++) {
+            int idx = c - x;
+            if (idx >= 0 && idx < textLen) line[c] = scrollText[idx];
+        }
         console->put(0, scrollRow, line, Console::LIGHT_GREEN, bgColor);
     };
 
@@ -114,8 +118,13 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
                               ? si.metadata[SongInfo::INFO]
                               : std::string();
         if (msg.empty()) msg = ci.getMeta("message");
-        scrollText = compressWs(msg);
-        scrollPos = 0;
+        std::string s = compressWs(msg);
+        // Always append the format/description section (same as the GUI), so the
+        // ticker has content even when the tune carries no embedded message.
+        std::string fmt = ci.formatDescription(si);
+        if (!fmt.empty()) s = s.empty() ? fmt : (s + "  ...  " + fmt);
+        scrollText = s;
+        scrollPos = 0; // restart off the right edge for the new song
         drawScrollLine();
         console->flush();
     });
@@ -312,8 +321,10 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     // drew anything (so the caller can decide to flush).
     auto tickScroll = [&]() -> bool {
         if (scrollText.empty()) return false;
-        int n = (int)(scrollText.size() + scrollGap.size());
-        scrollPos = (scrollPos + 1) % n;
+        // Travel from "text just off the right" (scrollPos 0) to "text fully off
+        // the left" (scrollPos width+textLen), then wrap back to the right.
+        int span = width + (int)scrollText.size();
+        scrollPos = (scrollPos + 1) % span;
         drawScrollLine();
         return true;
     };

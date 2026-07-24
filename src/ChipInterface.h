@@ -172,6 +172,19 @@ public:
 
     SongInfo getSongInfo(int i) { return mdb.getSongInfo(i); }
 
+    // The now-playing format line used by the scroller: "Platform - Name (EXT)"
+    // plus, when the resolved extension is documented, " ... <trackers> -
+    // <description>". Mirrors the format section the GUI's appendFormatInfo()
+    // builds. Pass the RAW SongInfo (before its .format is rewritten for
+    // display) so describeFormat()/resolveExtension() still classify.
+    std::string formatDescription(const SongInfo& s)
+    {
+        std::string fmt = MusicDatabase::describeFormat(s);
+        auto desc = mdb.describeExtension(MusicDatabase::resolveExtension(s));
+        if (!desc.empty()) fmt += " ... " + desc;
+        return fmt;
+    }
+
     // --- Search filters (the GUI's TAB filter screens) -----------------------
     // Thin forwards to the same MusicDatabase filter machinery the GUI drives,
     // so a text front end can offer the same narrowing. Each group list builds
