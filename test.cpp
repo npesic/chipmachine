@@ -1197,8 +1197,19 @@ bool testPlugin(std::string const& dir, std::string const& exclude,
             try {
                 auto* player = plugin.fromFile(f.getName());
                 if (player) {
-                    int count = 50;
-                    while (sum == 0 && count != 0) {
+                    // Two independent budgets. The render path (rc > 0) is a
+                    // pure decode -- emulators run far faster than realtime, so a
+                    // block costs microseconds, not its 93 ms of audio. A stingy
+                    // budget there spuriously fails tunes with a long SILENT
+                    // INTRO (e.g. some ZX AY tracks lead in with several seconds
+                    // of silence: prom.asc), so give it a generous ~28 s of
+                    // rendered audio -- still sub-second wall-clock, and it only
+                    // runs to the end for a genuinely silent file. The buffering
+                    // path (rc == 0) is ffmpeg cold-start warmup that actually
+                    // sleeps, so keep THAT bounded (~1 s) since it is realtime.
+                    int renderBudget = 300; // ~28 s of audio; cheap (no sleep)
+                    int bufferBudget = 50;  // ffmpeg warmup; 50 * 20 ms = ~1 s
+                    while (sum == 0 && renderBudget > 0 && bufferBudget > 0) {
                         int rc = player->getSamples(&buffer[0], buffer.size());
                         if (rc > 0) {
                             for (int i = 0; i < rc; ++i) {
@@ -1210,17 +1221,17 @@ bool testPlugin(std::string const& dir, std::string const& exclude,
                             if (sum != 0) {
                                 break;
                             }
-                            count--;
+                            renderBudget--;
                         } else if (rc == 0) {
                             // No PCM yet, but not end-of-stream: the FFMPEG plugin
                             // spawns the ffmpeg binary and returns immediately
                             // (non-blocking), so the first getSamples() calls come
                             // back empty while the subprocess warms up. Wait a beat
-                            // and retry within the count budget instead of giving
-                            // up (which reported a spurious "NO SOUND"). rc < 0 is
-                            // a real SONG_END and still breaks.
+                            // and retry within the budget instead of giving up
+                            // (which reported a spurious "NO SOUND"). rc < 0 is a
+                            // real SONG_END and still breaks.
                             utils::sleepms(20);
-                            count--;
+                            bufferBudget--;
                         } else
                             break;
                     }

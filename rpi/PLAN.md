@@ -609,3 +609,23 @@ match. Handles any tag/disk case combination and is robust for real
 streaming (the fetched file keeps whatever case the archive used). Same
 case-sensitivity theme as Findings 1/4 and §31; `.qsflib`/`.ssflib` companions
 now load on Linux/RPi.
+
+### Finding 9 — `testmus/zx/prom.asc` "NO SOUND": test sample-budget too short
+
+`prom.asc` (ZX ASC Sound Master, Ayfly) reported `playback NO SOUND`. Playing it
+directly (`cm testmus/zx/prom.asc`) proved it's fine — it just has a **several-
+second silent intro**. `testPlugin`'s detection budget was `count = 50` blocks =
+50 × 4096 frames ÷ 44100 ≈ **4.6 s**; the intro outlasts it, so the "any non-zero
+sample?" check never triggers. NOT aarch64-specific: chip emulation is
+sample-accurate, so the intro is identically silent on macOS — this fixture was
+borderline/failing on every platform, the Pi bring-up just surfaced it.
+
+**Fix (in `test.cpp` `testPlugin`, shared/all-platform):** split the single
+`count` into two budgets. The **render** path (`rc > 0`) is a pure decode that
+runs far faster than realtime (a block costs microseconds, not its 93 ms of
+audio), so it now gets a generous `renderBudget = 300` (~28 s of audio, still
+sub-second wall-clock, only fully consumed for a genuinely silent file) — enough
+for long silent intros. The **buffering** path (`rc == 0`, ffmpeg cold-start
+warmup) actually `sleepms(20)`s, so it keeps a bounded `bufferBudget = 50` (~1 s)
+to avoid slowing ffmpeg-failure detection. A truly silent/broken file still
+reports NO SOUND (just after more decode), so coverage isn't weakened.
