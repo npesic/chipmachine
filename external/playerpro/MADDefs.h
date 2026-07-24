@@ -89,6 +89,22 @@
 #define __BIG_ENDIAN__ 1
 #endif
 
+// MADBE*/MADLE* (MADFileUtils.h) gate their byte-swaps on the bare
+// __LITTLE_ENDIAN__/__BIG_ENDIAN__ macros. Apple's toolchain predefines one of
+// them and the WIN32 block above defines __LITTLE_ENDIAN__, but GCC/Clang on
+// Linux predefine NEITHER (they expose __BYTE_ORDER__ instead). Without one
+// defined, MADBE32/16 skip the swap and big-endian MAD headers parse as garbage
+// -> MADLoadMusicFileCString fails ("could not load module") on little-endian
+// aarch64/x86_64 Linux while working on macOS. Derive the macro from the
+// compiler's byte order when neither is set.
+#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#define __BIG_ENDIAN__ 1
+#else
+#define __LITTLE_ENDIAN__ 1
+#endif
+#endif
+
 //////////////////////////////////////////////////////////////////////
 #if defined(__APPLE__)			// MACINTOSH
 #define _MAC_H

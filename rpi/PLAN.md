@@ -256,7 +256,9 @@ already `if(APPLE)`-guarded). For the Pi, add a Linux packaging path:
 - **Native build time/RAM** on the Pi (mitigate with ccache + swap + SSD, or
   cross-compile).
 - **SunVox** has no source (prebuilt blob) — depends on an available Linux arm64
-  build; otherwise dropped on Pi.
+  build; otherwise dropped on Pi. **Resolved — see §12 Finding 5:** the official
+  aarch64 `sunvox.so` exists and just needs vendoring into `sunvox_lib/`; the
+  build already stages it next to each binary.
 - **File-dialog / update-check** get stubbed on Linux initially (acceptable for
   v1; the core player doesn't need them).
 - **GL driver**: Pi 5 Mesa V3D generally provides adequate desktop GL for
@@ -494,3 +496,63 @@ fetch-name correctness stays covered. Rejected alternatives: a second `SMP.set`
 file (git case-collision on macOS/Windows — the very bug class we're fixing), and
 moving the fixture to a subdir (`testPlugin` skips subdirs, so it would silently
 drop qts from playback coverage).
+
+### Finding 5 — SunVox engine: vendor the aarch64 `sunvox.so` (closes §9 risk)
+
+`SunVox Player` cases fail with `./sunvox.so: cannot open shared object file`.
+Not a bug — SunVox is a **closed-source prebuilt blob** the plugin `dlopen()`s at
+runtime (`SunVoxPlugin.cpp` `libName()` → `sunvox.dll`/`.dylib`/`.so`), and only
+the macOS `sunvox.dylib` is vendored in `sunvoxplugin/sunvox_lib/`. There is no
+source to compile; the platform binary must be dropped in. This is the SunVox
+risk flagged in §9.
+
+The build machinery already handles everything else: `sunvoxplugin/CMakeLists.txt`
+sets `SUNVOX_RUNTIME_LIB` **iff** `sunvox_lib/sunvox.so` exists at configure time,
+and the root `CMakeLists.txt` (~L507) copies it next to each playable binary
+(`chipmachine`/`cm`/`cmtest`) via a POST_BUILD step; `acquireEngine()` then loads
+it from `getExeDir()`. So the only missing piece is the file.
+
+**Setup (once):**
+1. Download the official SunVox library (MIT, same licence as the vendored
+   `.dylib`): <https://warmplace.ru/soft/sunvox/sunvox_lib.php>.
+2. Take the 64-bit ARM Linux engine — Pi 5 / 64-bit Raspberry Pi OS is aarch64,
+   so the `linux/lib_arm64/sunvox.so` (NOT `lib_arm`/armhf = 32-bit). Verify with
+   `file sunvox.so` → `ELF 64-bit LSB shared object, ARM aarch64`.
+3. Copy to `external/musicplayer/src/plugins/sunvoxplugin/sunvox_lib/sunvox.so`
+   (next to the existing `sunvox.dylib`) and **commit it** — mirrors the macOS
+   pattern and keeps RPi builds reproducible.
+4. **Reconfigure** before building — the `if(EXISTS …/sunvox.so)` gate runs at
+   configure time, so a bare `ninja` won't notice a freshly-dropped file:
+   `cmake builds/release` (or `./build.py build`), then
+   `ninja -C builds/release cmtest`.
+
+**Packaging follow-up:** the Linux/RPi packaging step must ship `sunvox.so` next
+to the executable, exactly as `package_app.sh` (L197-201) copies `sunvox.dylib`
+into `Contents/MacOS/` for the macOS bundle.
+
+### Finding 6 — PlayerPRO: big-endian MAD swap gated on a macro GCC doesn't define
+
+"PlayerPRO routing" threw `PlayerPRO: could not load module` from `fromFile`
+(`canHandle` passed — the "MADG" magic matched — but the deeper parse failed).
+Root cause is **endianness**, but not the usual kind: both macOS and the Pi are
+little-endian, so the divergence is the *compiler*, not the CPU.
+
+The vendored MADDriver reads big-endian Macintosh `.mad` data through
+`MADBE32`/`MADBE16` (`external/playerpro/MADFileUtils.h`), which swap **only**
+`#ifdef __LITTLE_ENDIAN__`. Apple's toolchain predefines the bare
+`__LITTLE_ENDIAN__` macro and `MADDefs.h`'s WIN32 block defines it too — but
+**GCC/Clang on Linux predefine neither** `__LITTLE_ENDIAN__` nor `__BIG_ENDIAN__`
+(they expose `__BYTE_ORDER__` instead), and `MADDefs.h` never derived it for the
+Linux case. So on aarch64 Linux the swap was skipped, the big-endian module
+header parsed as garbage, and `MADLoadMusicFileCString` failed. macOS worked
+only because AppleClang happens to predefine the macro.
+
+**Fix:** in `MADDefs.h`, when neither endian macro is defined, derive it from the
+compiler's `__BYTE_ORDER__` (`__BIG_ENDIAN__` on a big-endian target, else
+`__LITTLE_ENDIAN__`). No-op on macOS/Windows (already defined); fills the gap for
+GCC/Linux, fixing every `MADBE*`/`MADLE*` swap site at once. Note the MAD macro
+is `__LITTLE_ENDIAN__` (trailing `__`, Apple-style) — distinct from glibc's
+`__LITTLE_ENDIAN` in `<endian.h>`, so there is no collision. Same *class* as
+other "works on Apple's compiler, undefined elsewhere" macro gaps in vendored
+Mac-origin code; on a hypothetical big-endian target the swap is now also correct
+(it was effectively unreachable before).
