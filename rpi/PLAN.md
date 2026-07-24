@@ -406,3 +406,66 @@ needed changing. Cross-platform no-op on case-insensitive filesystems.
 > without NDEBUG. A Release `cmtest` would not have *aborted* on the OPL case —
 > but it would still have mis-routed the file to GME (silent/garbage) instead of
 > libvgm. The Debug build made a latent routing bug loud, which is a feature.
+> (Caveat discovered later — see Finding 3: this project's *Release* also leaves
+> asserts live, because it drops `-DNDEBUG`. So the OPL case aborts in Release
+> here too.)
+
+### Finding 2 — SGC RST-vector out-of-bounds read → GCC aarch64 `-O2` miscompile
+
+`testmus/gme/Dynamite Headdy.sgc` aborted in `blargg_vector::operator[]`
+(`assert(n <= size_)`). The `-O2` backtrace pointed at `Sgc_Impl::start_track`
+line 94 but that looked impossible, so it took a two-stage probe to pin down:
+
+- **Stage 1** (make `operator[]` `noinline`) — the crash *vanished* and the whole
+  GME corpus passed. Classic signature of an inlining/optimisation-sensitive bug
+  (UB the optimiser exploits), and proof the fault is codegen-dependent, not a
+  plain logic error.
+- **Stage 2** (keep `operator[]` inlinable, route only its failure path to a
+  `cold noinline` reporter that prints `n`/`size_`/`__builtin_return_address`) —
+  preserved the triggering codegen *and* captured the truth: **`n=1032`,
+  `size_=1028`**. `size_ == page_size(1024)+page_padding(4)` uniquely identifies
+  `vectors`, and `1032 == 129*8` — the loop `for (i=1; i<8; …) vectors[i*8+…]`
+  had run to **i=129**.
+
+Root cause, in the loop body (`Sgc_Impl.cpp:92`):
+```cpp
+vectors [i*8 + 1] = header_.rst_addrs [i*2 + 0];   // i=7 → rst_addrs[14]
+vectors [i*8 + 2] = header_.rst_addrs [i*2 + 1];   // i=7 → rst_addrs[15]
+```
+`header_.rst_addrs` is `byte[7*2]` = 14 elements. RST vectors 0x08..0x38 (i=1..7)
+should read entries **0..6**, i.e. `[(i-1)*2]`. The original `[i*2]` skipped
+entry 0 and read `rst_addrs[14]`/`[15]` — **2 bytes out of bounds**. That OOB
+read is undefined behaviour, and GCC 12 on aarch64 `-O2` miscompiled the loop
+because of it (trip count ran away to i=129, writing `vectors[1032]` past the
+1028-byte page). It's **also a plain correctness bug on every platform**: the RST
+vectors were populated from the wrong header entries (off by one). macOS never
+crashed only because its `NDEBUG` build silences the assert and the stray read
+lands in adjacent header bytes.
+
+**Fix:** index `header_.rst_addrs[(i-1)*2 + …]` (`Sgc_Impl.cpp`). Removes the UB
+(so the miscompile is gone) and loads the correct RST addresses everywhere.
+Confirmed: full GME corpus passes, `Dynamite Headdy.sgc` included. The diagnostic
+probe in `blargg_common.h` was reverted after identification.
+
+### Finding 3 — Release build silently drops `-DNDEBUG` (asserts ship live)
+
+Surfaced while diagnosing Finding 2: the abort fired in an `-O2`-*optimised*
+binary (backtrace full of `<optimized out>`), which shouldn't happen if `assert`
+were compiled out. Cause: `CMakeLists.txt:133-134`
+```cmake
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O2")
+set(CMAKE_C_FLAGS_RELEASE   "${CMAKE_C_FLAGS} -O2")
+```
+overrides CMake's default `-O3 -DNDEBUG`, so **`-DNDEBUG` is dropped** and every
+`assert()` across the tree — including all vendored emulator cores (GME
+`Blip_Buffer`/`Ay_Apu`/`blargg_vector`, …) — stays live in Release. This is why
+these asserts abort on the Linux/RPi build but not on the macOS release (whose
+packaging keeps `NDEBUG`).
+
+**Decision (deferred, not yet applied):** the correct end state is standard
+Release semantics (define `NDEBUG`), matching macOS. But *do not* just re-add it
+to paper over crashes — several of these asserts guard genuine UB (Finding 2 was
+an OOB read/write), and silencing them would trade a clean abort for silent
+corruption. Plan: keep asserts live as a bring-up safety net through Phase 4,
+fix the real bugs they catch (as with Finding 2), then restore `-DNDEBUG` for the
+shipping build once the corpus is clean. Track remaining asserts as they surface.
