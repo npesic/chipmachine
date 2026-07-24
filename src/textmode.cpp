@@ -10,6 +10,7 @@
 
 #include <sol.hpp>
 
+#include <cctype>
 #include <map>
 
 void initYoutube(sol::state&);
@@ -36,6 +37,18 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
     console->moveCursor(0, 2);
     console->setColor(Console::WHITE, Console::BLACK);
     TextListView listView(*console, height - 6, width);
+
+    // Filter overlay: TAB cycles through the same filter dimensions the GUI
+    // exposes -- Formats, Databases, Plugins -- each drawn as a selectable list
+    // over the search-results region. filterView shares that region with
+    // listView; only one is shown at a time (filterScreen picks which). The
+    // three DB filters are mutually exclusive (they share one slot in the
+    // engine), so activeFilterLabel names whichever is currently applied.
+    TextListView filterView(*console, height - 6, width);
+    enum { FS_SEARCH = 0, FS_FORMAT, FS_DATABASE, FS_PLUGIN, FS_COUNT };
+    int filterScreen = FS_SEARCH;
+    std::string activeFilterLabel;
+
     SongInfo info{};
 
     auto holder = ci.onMeta([&](const SongInfo& si) {
@@ -94,6 +107,44 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
         else
             c.put(text, color, Console::CURRENT_COLOR);
     });
+    // Row 0 of every filter screen is the "[ no filter ]" reset entry; group g
+    // sits at row g+1. Renders the group name and its song count for whichever
+    // screen is active.
+    filterView.setCallback([&](Console& c, int index, bool marked) {
+        std::string text;
+        if (index == 0) {
+            text = "[ no filter ]";
+        } else if (filterScreen == FS_FORMAT) {
+            auto const& g = ci.extensionGroups();
+            if (index - 1 < (int)g.size()) {
+                auto const& e = g[index - 1];
+                std::string ext = e.ext;
+                for (auto& ch : ext)
+                    ch = static_cast<char>(::toupper((unsigned char)ch));
+                text = "." + ext;
+                if (!e.name.empty()) text += "  " + e.name;
+                text += "  (" + std::to_string(e.count) + ")";
+            }
+        } else if (filterScreen == FS_DATABASE) {
+            auto const& g = ci.databaseGroups();
+            if (index - 1 < (int)g.size()) {
+                auto const& d = g[index - 1];
+                text = (d.name.empty() ? d.id : d.name) + "  (" +
+                       std::to_string(d.count) + ")";
+            }
+        } else if (filterScreen == FS_PLUGIN) {
+            auto const& g = ci.pluginGroups();
+            if (index - 1 < (int)g.size()) {
+                auto const& p = g[index - 1];
+                text = p.name + "  (" + std::to_string(p.count) + ")";
+            }
+        }
+        if (marked)
+            c.put(text, Console::WHITE, Console::BLUE);
+        else
+            c.put(text, Console::LIGHT_GREY, Console::CURRENT_COLOR);
+    });
+
     std::string lastLine;
     int olds = -1;
 
@@ -104,6 +155,92 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
 
     int last_marked = -1;
 
+    // ---- Filter-screen helpers (TAB) ------------------------------------
+    auto filterRowCount = [&]() -> int {
+        switch (filterScreen) {
+        case FS_FORMAT: return 1 + (int)ci.extensionGroups().size();
+        case FS_DATABASE: return 1 + (int)ci.databaseGroups().size();
+        case FS_PLUGIN: return 1 + (int)ci.pluginGroups().size();
+        default: return 0;
+        }
+    };
+    auto screenTitle = [&]() -> std::string {
+        switch (filterScreen) {
+        case FS_FORMAT: return "FORMAT FILTER";
+        case FS_DATABASE: return "DATABASE FILTER";
+        case FS_PLUGIN: return "PLUGIN FILTER";
+        default: return "";
+        }
+    };
+    // The status bar (row 1) shows the active filter on the search screen, and
+    // the current screen's key hints while browsing a filter list.
+    auto drawStatusBar = [&]() {
+        console->fill(bgColor, 0, 1, width, 1);
+        std::string s;
+        if (filterScreen != FS_SEARCH)
+            s = screenTitle() + "    ENTER: apply    TAB: next    ESC: cancel";
+        else if (!activeFilterLabel.empty())
+            s = "FILTER: " + activeFilterLabel + "    (TAB to change)";
+        else
+            s = "TAB: filter search";
+        console->put(0, 1, s, Console::CURRENT_COLOR, bgColor);
+    };
+    auto enterFilterScreen = [&]() {
+        filterView.setLength(filterRowCount());
+        filterView.select(0);
+        drawStatusBar();
+        console->fill(Console::BLACK, 0, 2, width, height - 6);
+        filterView.refresh();
+    };
+    auto enterSearchScreen = [&]() {
+        drawStatusBar();
+        console->fill(Console::BLACK, 0, 2, width, height - 6);
+        listView.refresh();
+        console->fill(Console::BLACK, 0, 0, width, 1);
+        console->put(0, 0, "#", Console::WHITE);
+        searchField.refresh();
+    };
+    // ENTER on a filter screen: apply the highlighted group (row 0 clears), then
+    // re-run the current search under the new filter.
+    auto applyFilter = [&]() {
+        int idx = filterView.marked();
+        activeFilterLabel = "";
+        if (idx <= 0) {
+            ci.clearSearchFilter();
+        } else if (filterScreen == FS_FORMAT) {
+            auto const& g = ci.extensionGroups();
+            if (idx - 1 < (int)g.size()) {
+                ci.setExtensionFilter(idx - 1);
+                std::string ext = g[idx - 1].ext;
+                for (auto& ch : ext)
+                    ch = static_cast<char>(::toupper((unsigned char)ch));
+                activeFilterLabel = "." + ext;
+            }
+        } else if (filterScreen == FS_DATABASE) {
+            auto const& g = ci.databaseGroups();
+            if (idx - 1 < (int)g.size()) {
+                ci.setDatabaseFilter(g[idx - 1].rowid);
+                activeFilterLabel =
+                    g[idx - 1].name.empty() ? g[idx - 1].id : g[idx - 1].name;
+            }
+        } else if (filterScreen == FS_PLUGIN) {
+            auto const& g = ci.pluginGroups();
+            if (idx - 1 < (int)g.size()) {
+                ci.setPluginFilter(idx - 1);
+                activeFilterLabel = g[idx - 1].name;
+            }
+        }
+        iquery->invalidate();
+        auto line = searchField.getResult();
+        iquery->setString(line);
+        listView.setLength(iquery->numHits());
+        lastLine = line;
+        filterScreen = FS_SEARCH;
+    };
+
+    drawStatusBar();
+    console->flush();
+
     while (true) {
         int k = console->getKey(100);
         bool doFlush = false;
@@ -111,7 +248,40 @@ void runConsole(std::shared_ptr<bbs::Console> console, ChipInterface& ci)
             console->clear();
             console->flush();
             break;
-        } else if (k == Console::KEY_F1) {
+        }
+
+        // TAB cycles the filter screens: search -> Format -> Database -> Plugin
+        // -> search. A raw Tab arrives as ASCII 9 from the ANSI console
+        // (Console::KEY_TAB is the parsed constant), so accept either.
+        if (k == Console::KEY_TAB || k == 9) {
+            filterScreen = (filterScreen + 1) % FS_COUNT;
+            if (filterScreen == FS_SEARCH)
+                enterSearchScreen();
+            else
+                enterFilterScreen();
+            console->flush(true);
+            continue;
+        }
+
+        // While a filter screen is up, keys drive its list; the search field is
+        // untouched. ESC backs out without changing the filter, ENTER applies.
+        if (filterScreen != FS_SEARCH) {
+            if (k == Console::KEY_ESCAPE) {
+                filterScreen = FS_SEARCH;
+                enterSearchScreen();
+            } else if (k == Console::KEY_ENTER) {
+                applyFilter();
+                enterSearchScreen();
+            } else if (k != Console::KEY_TIMEOUT) {
+                if (filterView.putKey(k)) filterView.refresh();
+            } else {
+                ci.update();
+            }
+            console->flush(true);
+            continue;
+        }
+
+        if (k == Console::KEY_F1) {
             ci.pause(ci.playing());
         } else if (k == Console::KEY_F3) {
             ci.nextSong();

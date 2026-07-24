@@ -58,6 +58,18 @@ public:
 
     int marked() { return mark; }
 
+    // Move the selection to row n (clamped) and scroll it into view. Used to
+    // reset a repurposed list back to the top when it is re-populated.
+    void select(int n)
+    {
+        mark = n;
+        if (mark < 0) mark = 0;
+        if (length > 0 && mark >= length) mark = length - 1;
+        if (mark < start) start = mark;
+        if (mark >= start + height) start = mark - height + 1;
+        if (start < 0) start = 0;
+    }
+
     void refresh()
     {
         console.showCursor(false);

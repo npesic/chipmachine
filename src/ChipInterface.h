@@ -171,6 +171,40 @@ public:
 
     SongInfo getSongInfo(int i) { return mdb.getSongInfo(i); }
 
+    // --- Search filters (the GUI's TAB filter screens) -----------------------
+    // Thin forwards to the same MusicDatabase filter machinery the GUI drives,
+    // so a text front end can offer the same narrowing. Each group list builds
+    // lazily on first call and is then cached (safe here: this facade indexes
+    // synchronously, so the corpus is ready before any front end asks). The
+    // three setters are MUTUALLY EXCLUSIVE -- they share one filter slot -- and
+    // -1 clears; applying one implicitly drops the others. After changing a
+    // filter, invalidate() + re-issue the query string to re-run the search.
+    std::vector<MusicDatabase::ExtGroup> const& extensionGroups()
+    {
+        return mdb.extensionGroups();
+    }
+    void setExtensionFilter(int gid) { mdb.setExtensionFilter(gid); }
+
+    std::vector<MusicDatabase::DatabaseGroup> const& databaseGroups()
+    {
+        return mdb.databaseGroups();
+    }
+    void setDatabaseFilter(int rowid) { mdb.setDatabaseFilter(rowid); }
+
+    std::vector<MusicDatabase::PluginGroup> const& pluginGroups()
+    {
+        return mdb.pluginGroups();
+    }
+    void setPluginFilter(int gid) { mdb.setPluginFilter(gid); }
+
+    // Drop whichever of the three (mutually exclusive) filters is active.
+    void clearSearchFilter()
+    {
+        mdb.setExtensionFilter(-1);
+        mdb.setDatabaseFilter(-1);
+        mdb.setPluginFilter(-1);
+    }
+
     [[nodiscard]] bool dbBusy() const { return mdb.busy(); }
     [[nodiscard]] bool isReindexing() const { return mdb.isReindexing(); }
 
