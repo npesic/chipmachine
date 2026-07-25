@@ -37,3 +37,6 @@ data/python_runtime/
 
 # Windows packaging staging output (win/package_win.sh)
 win/dist/
+
+# Raspberry Pi 5 packaging staging output (package_rpi.sh)
+/dist/

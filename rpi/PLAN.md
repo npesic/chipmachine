@@ -276,9 +276,11 @@ already `if(APPLE)`-guarded). For the Pi, add a Linux packaging path:
    `src/NativeDialogs_stub.cpp`, and the stale ARMv6 `RASPBERRYPI` branch carries
    a warning so it is never enabled for a Pi 5. `build.py --target raspberry` and
    the `rpi5-aarch64.cmake` cross toolchain are in place (§11).
-2. Provision a 64-bit Pi 5 and install the apt dependency set (§6).
-3. Native-build **`cm`** on the Pi and get one tune playing through ALSA — the
-   minimal proof that the same codebase runs on the Raspberry Pi 5.
+2. ✅ **Done:** Provisioned a 64-bit Pi 5; apt deps installed (§6).
+3. ✅ **Done:** Native-built **`cm`** on the Pi; tunes play through ALSA and the
+   full `cmtest` corpus is GREEN (§12).
+4. ✅ **Done:** Phase 3 — the `chipmachine` GUI builds, opens a window, and plays
+   on the Pi 5 (built clean on the first try; §13).
 
 ---
 
@@ -643,3 +645,107 @@ for long silent intros. The **buffering** path (`rc == 0`, ffmpeg cold-start
 warmup) actually `sleepms(20)`s, so it keeps a bounded `bufferBudget = 50` (~1 s)
 to avoid slowing ffmpeg-failure detection. A truly silent/broken file still
 reports NO SOUND (just after more decode), so coverage isn't weakened.
+
+
+## 13. Phase 3 — GUI (`chipmachine`) bring-up on the Pi 5
+
+**Status (2026-07-25): DONE — GUI works on the Pi 5.** The `chipmachine` target
+built clean on the **first try** (no source or CMake changes needed beyond the
+Phase 1 scaffolding), opened a window under the Pi desktop, and plays. The static
+pre-flight below (§13.1) held: every path already routed down the ordinary
+Linux/desktop-GL branches, so none of the anticipated triage classes (§13.4)
+actually bit. `cm`/`cmtest` had already proven the engine + all decoder plugins +
+ALSA on aarch64; the GUI added only the grappix OpenGL layer, the `fft` spectrum
+module, freetype text, and the six GUI-only TUs (`ChipMachine*.cpp`,
+`MusicBars.cpp`, `demofx/Transitions.cpp`) — all of which compiled on GCC/aarch64
+and ran on Mesa V3D without incident.
+
+The checklist in §13.4 is retained as a reference for what *could* have gone wrong
+(and for anyone reproducing the build on a different Pi OS image / display setup).
+
+### 13.1 Static pre-flight (done off-Pi) — no source blockers found
+
+Everything already routes down the ordinary Linux/desktop-GL paths; the Phase 1
+CMake work covers the GUI target too. Verified by inspection:
+
+- **CMake target** (`CMakeLists.txt`, `if(CM_GUI)` → non-Apple branch): links the
+  stubs (`NativeDialogs_stub.cpp`, `CheckForUpdate_stub.cpp`) and
+  `GUI_MODULES = grappix fft`. No `.mm`, no Apple frameworks on Linux.
+- **grappix backend** (`mods/grappix/CMakeLists.txt`): because we never define
+  `RASPBERRY`, the Pi 5 falls through `elseif(UNIX)` → `window_pc.cpp` + GLFW3 +
+  GLEW + desktop OpenGL + X11. It does **not** touch the removed Broadcom
+  `bcm_host`/`window_pi.cpp`/`eglutil.cpp` path (that branch stays dead — leave it).
+- **GL header** (`GL_Header.h`): desktop `<GL/glew.h>` whenever `RASPBERRYPI` is
+  undefined (which it must be — §1). Correct for Pi 5.
+- **GL context / shaders**: `window_pc.cpp` requests a GL **2.0** compatibility
+  context; the shaders carry **no `#version`** so they default to GLSL 110. Both
+  are comfortably inside what Pi 5 Mesa **V3D** exposes (desktop GL 3.1), so the
+  context request and shader compile should succeed.
+- **`fft` module** (`mods/fft/CMakeLists.txt`): links the **system** `libfftw3f`
+  (`find_library` + `find_path fftw3.h`); it does NOT compile the vendored
+  `fftw-3.3.4/` tree, so that stale checked-in `config.h` is irrelevant. Needs
+  `libfftw3-dev` (single-precision `libfftw3f`, `-DFFTW_SINGLE`) — already in §6.
+- **GUI-only TUs**: clean — only two properly-guarded `#ifdef __APPLE__` blocks in
+  `ChipMachine.cpp`; no x86 intrinsics, no `#import`, no Apple headers.
+- **Resource root** (`main.cpp`): `exe/../..` finds `data/` when the binary runs as
+  `./builds/release/chipmachine` from the repo, so the GUI locates `data/`/`lua/`.
+
+### 13.2 Extra apt deps for the GUI (superset of §6's `cm` set)
+
+```
+sudo apt install libglfw3-dev libglew-dev libgl1-mesa-dev libfreetype-dev \
+    libfftw3-dev \
+    libx11-dev libxxf86vm-dev libxrandr-dev libxi-dev libxinerama-dev libxcursor-dev
+```
+
+### 13.3 Build & run (native, on the Pi)
+
+```bash
+# Configure once, then build just the GUI target during bring-up:
+cmake -B builds/release -GNinja -DCMAKE_BUILD_TYPE=Release
+ninja -C builds/release chipmachine
+./builds/release/chipmachine          # add -d for debug logging
+```
+
+`-DCM_GUI=ON` is the default, so a plain `./build.py build --target native` also
+builds it. Keep iterating on `ninja -C builds/release chipmachine` (ccache warm).
+
+### 13.4 Triage checklist (expected failure classes, in likely order)
+
+1. **GCC/aarch64 compile of the GUI TUs + grappix/freetype-gl.** These have only
+   ever seen AppleClang. Watch for GCC-stricter diagnostics (the tree does not
+   build with `-Werror`, so warnings won't stop it), any AppleClang-only
+   extension, or `<cstdint>`-style missing includes (the root CMake already
+   force-includes `<cstdint>` for every C++ TU on GCC, so this class is mostly
+   pre-cleared). Same class as the shared-code fixes in §12.
+2. **Link.** The `--start-group` wrapper (`CMakeLists.txt`, non-Apple) already
+   brackets the whole archive web, so the GUI's extra libs (grappix, fft, GLEW,
+   GLFW, freetype) resolve like the `cm` link did.
+3. **Runtime: window/context creation.** GLFW must get a desktop-GL 2.0 context
+   from Mesa V3D. Pi 5 Raspberry Pi OS defaults to a **Wayland** compositor
+   (labwc/wayfire); Debian's GLFW is an X11 build, so it runs via **XWayland** —
+   ensure an X/XWayland display is present (run from the desktop session, not a
+   bare SSH shell, or forward/attach a display). `glewInit()` needs a current GLX
+   context; a headless/pure-EGL session will fail here.
+4. **Runtime: shader compile / first frame.** If GLSL 110 is rejected, check the
+   actual GL/GLSL version string V3D returns and bump the shader `#version` or the
+   `GLFW_CONTEXT_VERSION_*` hint (last resort — 110 is the safe default).
+5. **freetype-gl text atlas** rendering under V3D.
+6. **ffmpeg at runtime**: the tree's `bin/ffmpeg` is a Mach-O binary — must not be
+   used on the Pi. Ensure the apt `ffmpeg` is on `PATH` (main.cpp prepends
+   `bin/` and `exeDir`, so the system `ffmpeg` on `PATH` is the fallback — verify
+   it wins, or drop the Mach-O `bin/ffmpeg` on the Pi).
+
+Trim nothing from `MUSICPLAYER_PLUGINS` — they already all build for `cm` on the
+Pi; the GUI reuses the same plugin archives.
+
+### 13.5 Milestone — ✅ ACHIEVED (2026-07-25)
+
+**`./builds/release/chipmachine` opens a window on the Pi 5 desktop, renders the
+search UI + spectrum bars, and plays a searched tune through ALSA** — the same GUI
+binary from the same source tree, running on the Raspberry Pi 5. Reached on the
+first build. With `cm` (Phase 2), `cmtest` (Phase 4), and now the GUI (Phase 3)
+all green, the single-codebase Raspberry Pi 5 port is functionally complete; what
+remains is packaging (§7 / Phase 5) and the two deferred cleanups (§12: restore
+`-DNDEBUG` for the shipping Release build, and re-baseline `cmtest` on
+macOS/Ubuntu).
