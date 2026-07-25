@@ -191,8 +191,19 @@ source, so the apt list is mainly the system libs above plus GL/X11.
 
 ## 7. Packaging for the Pi
 
+**Status (2026-07-25): DONE (tarball) — `package_rpi.sh` ships a working aarch64
+tarball.** Built and verified on the Pi. It stages a flat tree (bin/ ~=
+Contents/MacOS, root ~= Contents/Resources): `chipmachine` + `cm` + `sunvox.so` +
+aarch64 `ffmpeg` + `ytdlp/` under `bin/`, and `data/`, `lua/`,
+`music/{Console,hvtc,projectay}/` at the root, with a generated `README.txt`
+listing the target-Pi apt runtime line. Every bundled binary is arch-checked
+(`check_aarch64`) so a stale macOS/x86 build can never ship. Output:
+`dist/chipmachine-<ver>-rpi5-aarch64.tar.gz`. Runtime shared libs come from apt
+(not bundled). A zero-dependency **AppImage** ($ORIGIN RPATH) remains an optional
+follow-up.
+
 macOS uses `package_app.sh` + `MACOSX_BUNDLE` + the `install()` bundle block (all
-already `if(APPLE)`-guarded). For the Pi, add a Linux packaging path:
+already `if(APPLE)`-guarded). The original Pi packaging options considered were:
 
 - **Simplest:** a `cmake --install` layout + tarball that places the `cm` /
   `chipmachine` binaries alongside `lua/`, `data/`, `music/`, and the SunVox
@@ -745,7 +756,8 @@ Pi; the GUI reuses the same plugin archives.
 search UI + spectrum bars, and plays a searched tune through ALSA** — the same GUI
 binary from the same source tree, running on the Raspberry Pi 5. Reached on the
 first build. With `cm` (Phase 2), `cmtest` (Phase 4), and now the GUI (Phase 3)
-all green, the single-codebase Raspberry Pi 5 port is functionally complete; what
-remains is packaging (§7 / Phase 5) and the two deferred cleanups (§12: restore
-`-DNDEBUG` for the shipping Release build, and re-baseline `cmtest` on
-macOS/Ubuntu).
+all green — plus a working aarch64 tarball (§7, `package_rpi.sh`) — the
+single-codebase Raspberry Pi 5 port is complete end to end. The only deferred
+items are the two §12 cleanups (restore `-DNDEBUG` for the shipping Release build,
+and re-baseline `cmtest` on macOS/Ubuntu) and, optionally, a zero-dependency
+AppImage.
